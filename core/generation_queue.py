@@ -111,18 +111,27 @@ class GenerationQueue:
         return False
 
     def clear_completed(self):
-        """Remove completed, failed, and cancelled jobs"""
+        """Remove completed, failed, and cancelled jobs
+
+        Note: If current_job is removed during cleanup, we clear the reference.
+        This is safe even if a job is actively processing, as we only clear
+        the reference when the job is no longer in the queue or not processing.
+        """
         original_count = len(self.jobs)
         self.jobs = [job for job in self.jobs
                     if job.status not in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]]
         removed = original_count - len(self.jobs)
 
-        if self.current_job and (
-            self.current_job.status != JobStatus.PROCESSING or
-            self.current_job not in self.jobs
-        ):
-            self.current_job = None
-            self.is_processing = False
+        # Clear stale current_job references after removing finished work
+        if self.current_job:
+            # If job is not processing, clear the reference
+            if self.current_job.status != JobStatus.PROCESSING:
+                self.current_job = None
+                self.is_processing = False
+            # If job was removed from the queue, clear the reference
+            elif self.current_job not in self.jobs:
+                self.current_job = None
+                self.is_processing = False
 
         if removed > 0:
             logger.info(f"Cleared {removed} finished jobs")
