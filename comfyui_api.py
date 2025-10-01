@@ -425,8 +425,9 @@ class ComfyUIBridge:
                 )
             except requests.Timeout as exc:
                 logger.warning(
-                    "History request timed out for prompt %s: %s",
+                    "History request timed out for prompt %s (timeout=%s): %s",
                     prompt_id,
+                    history_timeout,
                     exc,
                 )
                 time.sleep(self.poll_interval)
