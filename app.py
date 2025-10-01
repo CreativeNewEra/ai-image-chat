@@ -71,7 +71,7 @@ def _build_ollama_tags_url(base_url: str) -> str:
     trimmed = base_url.rstrip("/")
     if trimmed.endswith("/api"):
         trimmed = trimmed[:-4]
-    return urljoin(trimmed.rstrip("/") + "/", "api/tags")
+    return urljoin(trimmed + "/", "api/tags")
 
 
 def get_available_models():
