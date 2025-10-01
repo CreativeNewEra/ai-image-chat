@@ -76,11 +76,13 @@ ls -la workflows/text2img/
 # Should show: flux_krea_text2img.json and flux_krea_text2img_meta.json
 ```
 
-2. **If missing, copy from original location:**
+2. **If missing, restore the shipped workflow files:**
 ```bash
-mkdir -p workflows/text2img
-cp flux1_krea_dev.json workflows/text2img/flux_krea_text2img.json
+git checkout -- workflows/text2img/flux_krea_text2img.json \
+    workflows/text2img/flux_krea_text2img_meta.json
 ```
+
+   > Migrating an older manual setup? Copy your legacy `flux1_krea_dev.json` into `workflows/text2img/` and rename it to `flux_krea_text2img.json` so the workflow manager can detect it.
 
 3. **Create metadata file:**
 ```bash
@@ -144,11 +146,14 @@ When generating: "❌ Failed to load workflow"
 
 **Solution:**
 ```bash
-# Re-copy the original workflow
-cp flux1_krea_dev.json workflows/text2img/flux_krea_text2img.json
+# Restore the workflow files shipped with the repo
+git checkout -- workflows/text2img/flux_krea_text2img.json \
+    workflows/text2img/flux_krea_text2img_meta.json
 
 # Restart app
 ```
+
+> Only fall back to copying a legacy `flux1_krea_dev.json` into `workflows/text2img/flux_krea_text2img.json` if you're migrating from an older manual setup that doesn't have the new directory layout.
 
 ---
 
@@ -446,12 +451,15 @@ cp -r workflows workflows_backup
 
 # 2. Recreate workflow directory
 rm -rf workflows
-mkdir -p workflows/text2img
+mkdir -p workflows/text2img workflows/img2img
 
-# 3. Copy default workflow
-cp flux1_krea_dev.json workflows/text2img/flux_krea_text2img.json
+# 3. Restore default workflows shipped with repo
+git checkout -- workflows/text2img/flux_krea_text2img.json \
+    workflows/text2img/flux_krea_text2img_meta.json \
+    workflows/img2img/flux_img2img.json \
+    workflows/img2img/flux_img2img_meta.json
 
-# 4. Recreate metadata
+# 4. (Optional) Recreate metadata manually if git checkout is unavailable
 cat > workflows/text2img/flux_krea_text2img_meta.json << 'EOF'
 {
   "name": "FLUX Krea Text2Image",
@@ -467,6 +475,8 @@ EOF
 # 5. Restart app
 python app.py
 ```
+
+> Legacy setups: if you only have `flux1_krea_dev.json`, place it in `workflows/text2img/` as `flux_krea_text2img.json` after running the steps above so the workflow manager can load it.
 
 ---
 
