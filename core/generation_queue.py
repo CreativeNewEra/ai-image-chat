@@ -178,10 +178,8 @@ class GenerationQueue:
             return None
 
         if self.current_job not in self.jobs:
-            if self.current_job.status != JobStatus.PROCESSING:
-                self.current_job = None
+            self.current_job = None
             return None
-
         if self.current_job.status == JobStatus.PROCESSING:
             return self.current_job.to_dict()
 
