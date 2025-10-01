@@ -35,8 +35,11 @@ def test_get_available_models_builds_tags_url(monkeypatch):
 def test_get_available_models_returns_fallback_on_failure(monkeypatch):
     """Keep the existing fallback list when the tags request fails."""
 
+    def fake_get_error(*args, **kwargs):
+        raise requests.RequestException()
+
     monkeypatch.setattr(app, "OLLAMA_API", "http://example.com/api")
-    monkeypatch.setattr(app.requests, "get", lambda *args, **kwargs: (_ for _ in ()).throw(requests.RequestException()))
+    monkeypatch.setattr(app.requests, "get", fake_get_error)
 
     models = app.get_available_models()
 

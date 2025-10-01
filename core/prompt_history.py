@@ -156,13 +156,14 @@ class PromptHistory:
                     self.prompts.append(entry)
                     existing_prompts.add(prompt_text)
 
+                # Calculate added count BEFORE trimming to get accurate count
+                added_count = max(0, len(self.prompts) - original_len)
+
                 # Limit size and track trimming
                 trimmed_count = 0
                 if len(self.prompts) > self.max_history:
                     trimmed_count = len(self.prompts) - self.max_history
                     self.prompts = self.prompts[: self.max_history]
-
-                added_count = max(0, len(self.prompts) - original_len)
 
                 if added_count > 0 or duplicate_count > 0 or invalid_count > 0 or trimmed_count > 0:
                     self.save_to_file()
