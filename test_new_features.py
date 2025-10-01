@@ -105,3 +105,35 @@ def test_prompt_history_persists_to_disk(tmp_path):
     assert len(reloaded_prompts) == 1
     assert reloaded_prompts[0]["prompt"] == prompt
     assert reloaded_prompts[0]["settings"] == settings
+
+
+def test_prompt_history_import_reports_actual_added(tmp_path):
+    history = create_history(tmp_path)
+
+    existing_prompt = "Atmospheric concept art of a misty forest temple at dawn"
+    history.add_prompt(existing_prompt)
+
+    duplicate_prompt = "Highly detailed digital painting of a dragon soaring above mountains"
+
+    import_data = {
+        "prompts": [
+            {"prompt": existing_prompt, "timestamp": "2024-01-01T00:00:00"},
+            {"prompt": duplicate_prompt, "timestamp": "2024-01-02T00:00:00"},
+            {"prompt": duplicate_prompt, "timestamp": "2024-01-03T00:00:00"},
+        ]
+    }
+
+    import_file = tmp_path / "import_prompts.json"
+    import_file.write_text(json.dumps(import_data), encoding="utf-8")
+
+    message = history.import_prompts(str(import_file))
+
+    assert "✅ Imported 1 prompt" in message
+    assert "2 duplicates skipped" in message
+
+    # Ensure the history reflects the actual number of new prompts reported
+    recent_prompts = history.get_recent_prompts(10)
+    imported_prompts = [entry["prompt"] for entry in recent_prompts]
+
+    assert duplicate_prompt in imported_prompts
+    assert imported_prompts.count(duplicate_prompt) == 1

@@ -135,20 +135,55 @@ class PromptHistory:
                 data = json.load(f)
                 imported = data.get("prompts", [])
 
+                original_len = len(self.prompts)
+                existing_prompts = {
+                    entry.get("prompt") for entry in self.prompts if entry.get("prompt")
+                }
+                duplicate_count = 0
+                invalid_count = 0
+
                 # Merge with existing, avoiding duplicates
                 for entry in imported:
                     prompt_text = entry.get("prompt", "")
-                    if prompt_text:
-                        # Check if already exists
-                        exists = any(p["prompt"] == prompt_text for p in self.prompts)
-                        if not exists:
-                            self.prompts.append(entry)
+                    if not prompt_text:
+                        invalid_count += 1
+                        continue
 
-                # Limit size
+                    if prompt_text in existing_prompts:
+                        duplicate_count += 1
+                        continue
+
+                    self.prompts.append(entry)
+                    existing_prompts.add(prompt_text)
+
+                # Limit size and track trimming
+                trimmed_count = 0
                 if len(self.prompts) > self.max_history:
+                    trimmed_count = len(self.prompts) - self.max_history
                     self.prompts = self.prompts[: self.max_history]
 
-                self.save_to_file()
-                return f"✅ Imported {len(imported)} prompts"
+                added_count = max(0, len(self.prompts) - original_len)
+
+                if added_count > 0 or trimmed_count > 0:
+                    self.save_to_file()
+
+                prompt_word = "prompt" if added_count == 1 else "prompts"
+                message = f"✅ Imported {added_count} {prompt_word}"
+
+                details = []
+                if duplicate_count:
+                    duplicate_word = "duplicate" if duplicate_count == 1 else "duplicates"
+                    details.append(f"{duplicate_count} {duplicate_word} skipped")
+                if invalid_count:
+                    invalid_word = "entry" if invalid_count == 1 else "entries"
+                    details.append(f"{invalid_count} invalid {invalid_word} ignored")
+                if trimmed_count:
+                    trimmed_word = "prompt" if trimmed_count == 1 else "prompts"
+                    details.append(f"{trimmed_count} {trimmed_word} trimmed by history limit")
+
+                if details:
+                    message += f" ({', '.join(details)})"
+
+                return message
         except Exception as e:
             return f"❌ Import failed: {e}"
