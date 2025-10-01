@@ -270,8 +270,9 @@ def generate_image(
     if seed_value and seed_value.strip():
         try:
             seed = int(seed_value)
-        except:
-            pass
+        except ValueError:
+            logger.warning("Invalid seed input '%s'; using managed default", seed_value)
+            seed = None
 
     # Check if seed is locked
     seed = seed_manager.get_seed_for_generation(seed)
@@ -338,8 +339,9 @@ def add_to_queue(prompt_text, steps, width, height, seed_value):
     if seed_value and seed_value.strip():
         try:
             seed = int(seed_value)
-        except:
-            pass
+        except ValueError:
+            logger.warning("Invalid seed input '%s'; using random seed", seed_value)
+            seed = -1
 
     job_id = gen_queue.add_job(prompt_text, width, height, steps, seed)
     logger.info(f"Added job {job_id} to queue")
@@ -360,8 +362,11 @@ def add_batch_variations(prompt_text, steps, width, height, seed_value, count=4)
     if seed_value and seed_value.strip():
         try:
             seed = int(seed_value)
-        except:
-            pass
+        except ValueError:
+            logger.warning(
+                "Invalid seed input '%s'; using history/random fallback", seed_value
+            )
+            seed = None
 
     # If no seed provided, use last seed from history or generate random
     if seed is None or seed == -1:
