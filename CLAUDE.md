@@ -203,7 +203,7 @@ The app binds to `0.0.0.0:7860` for LAN access. ComfyUI must be started with `--
 
 ## Common Issues
 
-**📝 For detailed troubleshooting steps, see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) and [PHASE3_TROUBLESHOOTING.md](./PHASE3_TROUBLESHOOTING.md)**
+**📝 For detailed troubleshooting steps, see [TROUBLESHOOTING.md](./TROUBLESHOOTING.md)**
 
 ### "Cannot connect to Ollama"
 - Verify: `curl http://localhost:11434/api/tags`
@@ -522,24 +522,29 @@ All custom exceptions are documented in `core/exceptions.py` with:
 - **Flexibility:** Multiple workflows, batch processing, advanced gallery
 - **Error Handling:** Custom exceptions for better debugging and user feedback
 
-See **[REFACTORING_SUMMARY.md](./REFACTORING_SUMMARY.md)** and **[PHASE3_PROGRESS.md](./PHASE3_PROGRESS.md)** for complete details.
+See **[docs/archive/REFACTORING_SUMMARY.md](./docs/archive/REFACTORING_SUMMARY.md)** and **[docs/archive/PHASE3_PROGRESS.md](./docs/archive/PHASE3_PROGRESS.md)** for complete details.
 
 ## Documentation Guide
 
+### Core Documentation (Root)
 - **[README.md](./README.md)** - Start here for setup and usage
 - **[QUICKSTART.md](./QUICKSTART.md)** - Quick setup guide
-- **[QUICK_REFERENCE.md](./QUICK_REFERENCE.md)** - Commands and shortcuts cheat sheet
 - **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Contributor guide & code style
 - **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** - Solutions to common issues
-- **[PHASE3_TROUBLESHOOTING.md](./PHASE3_TROUBLESHOOTING.md)** - Phase 3 specific troubleshooting
-- **[BUTTON_DEBUG_CHECKLIST.md](./BUTTON_DEBUG_CHECKLIST.md)** - Quick fix for button issues
-- **[KNOWN_ISSUES.md](./KNOWN_ISSUES.md)** - Current known issues and limitations
-- **[BEST_PRACTICES.md](./BEST_PRACTICES.md)** - Code quality and architecture recommendations
 - **[ROADMAP.md](./ROADMAP.md)** - Feature timeline and planning
-- **[CURRENT_STATUS.md](./CURRENT_STATUS.md)** - Current development status
-- **[PHASE3_PROGRESS.md](./PHASE3_PROGRESS.md)** - Phase 3 progress tracking
-- **[REFACTORING_SUMMARY.md](./REFACTORING_SUMMARY.md)** - Modularization details
 - **[CLAUDE.md](./CLAUDE.md)** - This file - Complete developer reference
+
+### Additional Documentation (docs/)
+- **[docs/QUICK_REFERENCE.md](./docs/QUICK_REFERENCE.md)** - Commands and shortcuts cheat sheet
+- **[docs/IMG2IMG_GUIDE.md](./docs/IMG2IMG_GUIDE.md)** - Image-to-image user guide
+- **[docs/IMG2IMG_IMPLEMENTATION.md](./docs/IMG2IMG_IMPLEMENTATION.md)** - Image-to-image technical details
+- **[docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)** - Production deployment guide
+
+### Historical Documentation (docs/archive/)
+- **[docs/archive/PHASE25_COMPLETION_SUMMARY.md](./docs/archive/PHASE25_COMPLETION_SUMMARY.md)** - Phase 2.5 completion summary
+- **[docs/archive/PHASE3_PROGRESS.md](./docs/archive/PHASE3_PROGRESS.md)** - Phase 3 progress tracking
+- **[docs/archive/REFACTORING_SUMMARY.md](./docs/archive/REFACTORING_SUMMARY.md)** - Modularization details
+- **[docs/archive/CURRENT_STATUS.md](./docs/archive/CURRENT_STATUS.md)** - Historical development status
 
 ## Important Implementation Details
 
@@ -758,7 +763,7 @@ See `core/workflow_manager.py` for implementation.
 **Latest Feature:** Img2img Mode (2025-09-30)
 **Next Recommended Feature:** ControlNet Integration or Inpainting
 
-See **[CURRENT_STATUS.md](./CURRENT_STATUS.md)** for detailed status and recommendations.
+See **[docs/archive/CURRENT_STATUS.md](./docs/archive/CURRENT_STATUS.md)** for detailed status and recommendations.
 
 ## Future Enhancements (Phase 3+)
 

@@ -68,3 +68,6 @@ htmlcov/
 # Linting & Type Checking
 .mypy_cache/
 .ruff_cache/
+
+# Documentation (keep core docs, ignore archive backups)
+docs/archive/*_backup.md

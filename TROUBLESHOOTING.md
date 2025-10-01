@@ -153,6 +153,104 @@ return gr.update(value=warning_text, visible=warning_visible)
 
 ---
 
+## Phase 3 - Workflow Manager Issues
+
+### Issue #4: "No module named 'websocket'"
+
+**Date:** 2025-09-30
+**Status:** Resolved ✅
+
+**Symptom:**
+```
+ModuleNotFoundError: No module named 'websocket'
+```
+
+**Solution:**
+```bash
+pip install websocket-client
+```
+
+### Issue #5: "Loading workflows from workflows - Loaded 0 workflows"
+
+**Date:** 2025-09-30
+**Status:** Resolved ✅
+
+**Symptom:**
+Terminal shows "Loaded 0 workflows" on startup
+
+**Cause:** Workflow directory is empty or metadata files missing
+
+**Solution:**
+```bash
+# Check if workflow exists
+ls -la workflows/text2img/
+
+# If missing, restore from git
+git checkout -- workflows/text2img/flux_krea_text2img.json \
+    workflows/text2img/flux_krea_text2img_meta.json
+
+# Or create metadata manually
+cat > workflows/text2img/flux_krea_text2img_meta.json << 'EOF'
+{
+  "name": "FLUX Krea Text2Image",
+  "description": "Default FLUX text-to-image workflow",
+  "category": "Text2Image",
+  "tags": ["flux", "text2img", "default"],
+  "author": "ant",
+  "created_at": "2025-09-30T12:00:00",
+  "modified_at": "2025-09-30T12:00:00"
+}
+EOF
+```
+
+### Issue #6: Workflow Selector UI Not Visible
+
+**Date:** 2025-09-30
+**Status:** Resolved ✅
+
+**Symptom:** Can't find "🔀 Workflow Selector" accordion
+
+**Solution:**
+1. Switch to Generate Mode (click 🎨 Generate button)
+2. Scroll down past the prompt textbox
+3. Look for "🔀 Workflow Selector" accordion (collapsed by default)
+4. Click to expand
+
+---
+
+## Known Issues & Limitations
+
+### Keyboard Shortcuts Disabled ⚠️
+
+**Status:** DISABLED (Current Workaround)
+**Severity:** Medium
+
+The custom JavaScript keyboard shortcuts cause button click interference and are currently disabled in `app.py:381`. All buttons work correctly without keyboard shortcuts. See Issue #1 above for details.
+
+**Permanent Fix (TODO):**
+- Refactor JavaScript to use `stopPropagation()` instead of `preventDefault()`
+- Add proper event target checking
+- Test thoroughly before re-enabling
+
+### No Unit Tests
+
+**Status:** Open
+**Severity:** Low
+
+Core modules lack unit tests. Manual testing required for all changes.
+
+**Solution:**
+Create `tests/` directory with pytest tests for core modules.
+
+### VRAM Monitoring Overhead
+
+**Status:** Acceptable
+**Severity:** Low
+
+`VRAMMonitor` polls nvidia-smi with 2-second caching. Impact is minimal but could be optimized with background thread polling if needed.
+
+---
+
 ## Common Issues & Quick Fixes
 
 ### Buttons Not Working ⚠️ MOST COMMON ISSUE
