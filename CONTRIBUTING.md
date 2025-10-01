@@ -566,10 +566,76 @@ ai-image-chat/
 
 See [CLAUDE.md](./CLAUDE.md) for detailed architecture documentation.
 
+## Best Practices for Phase 3+
+
+### Architecture Patterns
+
+When implementing Phase 3 features (multiple workflows, ControlNet, LoRA), follow these patterns:
+
+```python
+class FeatureManager:
+    """Base class for feature managers"""
+    def __init__(self, config: dict):
+        self.config = config
+        self.enabled = config.get("enabled", True)
+
+    def initialize(self):
+        """Setup feature"""
+        pass
+
+    def cleanup(self):
+        """Cleanup resources"""
+        pass
+```
+
+### Configuration Management
+
+Use environment variables for system-specific settings:
+
+```python
+# config.py
+import os
+
+# Load from environment or use defaults
+COMFYUI_PATH = os.getenv("COMFYUI_PATH", "/home/ant/AI/ComfyUI")
+OLLAMA_API = os.getenv("OLLAMA_API", "http://localhost:11434/api")
+```
+
+### Input Validation
+
+Always validate user inputs:
+
+```python
+def generate_image(prompt_text, steps, width, height):
+    if not (512 <= width <= 2048):
+        raise ValueError("Width must be between 512 and 2048")
+    if not (1 <= steps <= 100):
+        raise ValueError("Steps must be between 1 and 100")
+```
+
+### Extract Repeated Code
+
+Create helper functions for common patterns:
+
+```python
+def ollama_request(endpoint: str, payload: dict, timeout: int = 30):
+    try:
+        response = requests.post(
+            f"{OLLAMA_API}/{endpoint}",
+            json=payload,
+            timeout=timeout
+        )
+        return response.json() if response.status_code == 200 else None
+    except Exception as e:
+        logger.error(f"Ollama request failed: {e}")
+        return None
+```
+
 ## Questions?
 
 - Check [CLAUDE.md](./CLAUDE.md) for developer documentation
 - Check [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) for common issues
+- Check [docs/](./docs/) for additional guides
 - Open an issue on GitHub for questions or bug reports
 
 ---
