@@ -146,8 +146,24 @@ def test_enhanced_gallery():
         # Test 3: Sort by seed
         print("\n3. Testing sort by seed...")
         sorted_imgs = gallery.get_images(sort_by="seed")
-        # Check that images are sorted (can't directly check, but verify we get same count)
+        # Verify image order matches expected seed ordering using gallery metadata
         assert len(sorted_imgs) == 5
+
+        # Build the expected ordering from gallery metadata and compare identities
+        metadata_sorted = sorted(gallery.images, key=lambda img: img["seed"])
+        expected_imgs = [entry["image"] for entry in metadata_sorted]
+        expected_seeds = [entry["seed"] for entry in metadata_sorted]
+
+        assert (
+            sorted_imgs == expected_imgs
+        ), "Image identity order should follow ascending seed order"
+
+        # Double-check that each returned image aligns with the expected seed sequence
+        seed_lookup = {id(entry["image"]): entry["seed"] for entry in gallery.images}
+        sorted_seeds = [seed_lookup[id(img)] for img in sorted_imgs]
+        assert (
+            sorted_seeds == expected_seeds
+        ), "Sorted images should align with ascending seed metadata"
         print(f"✓ Sorted {len(sorted_imgs)} images by seed")
 
         # Test 4: Toggle favorite
