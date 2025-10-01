@@ -204,4 +204,5 @@ Once started, ComfyUI will be available at:
 • http://localhost:8188 (laptop)
 • http://192.168.1.175:8188 (desktop)
 
-Then click the "Check Status" button below."""
+Then click the "Check Status" button below.
+""".rstrip()
