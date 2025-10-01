@@ -479,9 +479,10 @@ class ComfyUIBridge:
                                 )
                             except requests.Timeout as exc:
                                 logger.warning(
-                                    "Image download timed out for prompt %s (%s): %s",
+                                    "Image download timed out for prompt %s (%s) after %.2f seconds: %s",
                                     prompt_id,
                                     filename,
+                                    image_timeout,
                                     exc,
                                 )
                                 continue
