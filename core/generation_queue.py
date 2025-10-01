@@ -171,22 +171,25 @@ class GenerationQueue:
             "paused": self.paused,
             "current_job": self._get_current_job_info()
         }
-
-    def _get_current_job_info(self) -> Optional[Dict]:
-        """Return information about the current job if it's valid."""
+        """Return information about the current job if it's valid. Does not modify state."""
         if not self.current_job:
             return None
 
         if self.current_job not in self.jobs:
-            self.current_job = None
             return None
+
         if self.current_job.status == JobStatus.PROCESSING:
             return self.current_job.to_dict()
 
-        # Job is still referenced but no longer processing; clear it.
-        self.current_job = None
+        # Job is still referenced but no longer processing.
         return None
 
+    def _cleanup_current_job_reference(self):
+        """Clear current_job if it is no longer valid."""
+        if not self.current_job:
+            return
+        if self.current_job not in self.jobs or self.current_job.status != JobStatus.PROCESSING:
+            self.current_job = None
     def get_queue_display(self) -> str:
         """Get formatted queue status for display"""
         status = self.get_queue_status()
