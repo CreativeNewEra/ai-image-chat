@@ -88,7 +88,8 @@ def test_prompt_history_persists_to_disk(tmp_path):
     history = create_history(tmp_path)
 
     prompt = "Vibrant watercolor painting of a bustling futuristic marketplace"
-    history.add_prompt(prompt)
+    settings = {"width": 768, "height": 512, "steps": 25}
+    history.add_prompt(prompt, settings)
 
     history_file = Path(history.history_file)
     assert history_file.exists()
@@ -97,3 +98,10 @@ def test_prompt_history_persists_to_disk(tmp_path):
         data = json.load(fp)
 
     assert data["prompts"][0]["prompt"] == prompt
+    assert data["prompts"][0]["settings"] == settings
+
+    reloaded_history = PromptHistory(history_file=str(history_file))
+    reloaded_prompts = reloaded_history.get_recent_prompts(1)
+    assert len(reloaded_prompts) == 1
+    assert reloaded_prompts[0]["prompt"] == prompt
+    assert reloaded_prompts[0]["settings"] == settings
