@@ -6,13 +6,13 @@ This document outlines suggested improvements and best practices for the AI Imag
 
 ## 📊 Current State Analysis
 
-**Code Stats (Updated 2025-09-30):**
-- `app.py`: 1,285 lines (UI + Gradio interface)
-- `core/`: ~807 lines (8 modular classes)
-- `utils/`: ~34 lines (helper functions)
-- `comfyui_api.py`: 264 lines (1 class)
-- `config.py`: 130 lines
-- **Total:** ~2,520 lines (better organized)
+**Code Stats (Updated 2025-09-30; recount performed on current repo state):**
+- `app.py`: 2,102 lines (UI + Gradio interface)
+- `core/`: ~1,542 lines (modular business-logic package)
+- `utils/`: ~44 lines (helper functions)
+- `comfyui_api.py`: 459 lines (1 class)
+- `config.py`: 158 lines
+- **Total:** ~4,305 lines (better organized)
 
 **Current Architecture:** ✅ Excellent (Recently Refactored)
 - **Modular structure:** `core/` for business logic, `utils/` for helpers
@@ -30,8 +30,8 @@ This document outlines suggested improvements and best practices for the AI Imag
 **Status:** ✅ **COMPLETED** (2025-09-30)
 
 **Results:**
-- app.py reduced from 1,967 → 1,285 lines (35% smaller)
-- Created `core/` module with 8 business logic classes
+- The initial refactor trimmed app.py to ~1,285 lines, but the file has since grown back to 2,102 lines—consider another pass to keep it focused.
+- Created `core/` module with dedicated business logic classes
 - Created `utils/` module for helper functions
 - Added type hints and comprehensive docstrings
 - Zero breaking changes
@@ -39,9 +39,9 @@ This document outlines suggested improvements and best practices for the AI Imag
 **Current Structure:**
 ```
 ai-image-chat/
-├── app.py                    # Main Gradio app (UI, ~1285 lines)
-├── config.py                 # Configuration (130 lines)
-├── comfyui_api.py           # ComfyUI bridge (264 lines)
+├── app.py                    # Main Gradio app (UI, ~2100 lines)
+├── config.py                 # Configuration (158 lines)
+├── comfyui_api.py           # ComfyUI bridge (459 lines)
 ├── core/                     # ✅ NEW
 │   ├── __init__.py
 │   ├── mode_manager.py      # Mode management logic
@@ -52,7 +52,7 @@ ai-image-chat/
 │   ├── prompt_history.py    # Prompt history
 │   ├── smart_switch.py      # Smart suggestions
 │   └── image_gallery.py     # Gallery management
-└── utils/                    # ✅ NEW
+└── utils/                    # ✅ NEW (~44 lines total)
     ├── __init__.py
     └── image_utils.py        # PIL/base64 utilities
 ```
