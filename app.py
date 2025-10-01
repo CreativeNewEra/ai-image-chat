@@ -7,6 +7,7 @@ import logging
 import random
 import time
 from datetime import datetime
+from urllib.parse import urljoin
 
 import gradio as gr
 import requests
@@ -65,14 +66,22 @@ mode_manager = ModeManager(vram_monitor, comfy)
 # ============================================================================
 
 
+def _build_ollama_tags_url(base_url: str) -> str:
+    """Construct the Ollama tags endpoint from the configured API URL."""
+    trimmed = base_url.rstrip("/")
+    if trimmed.endswith("/api"):
+        trimmed = trimmed[:-4]
+    return urljoin(trimmed.rstrip("/") + "/", "api/tags")
+
+
 def get_available_models():
     """Get list of Ollama models"""
     try:
-        response = requests.get(f"{OLLAMA_API.replace('/api', '')}/api/tags")
+        response = requests.get(_build_ollama_tags_url(OLLAMA_API))
         if response.status_code == 200:
             models = response.json().get("models", [])
             return [model["name"] for model in models]
-    except:
+    except Exception:
         pass
     return [OLLAMA_CHAT_MODEL, "mistral:7b", "mistral-small3.2:latest"]
 
