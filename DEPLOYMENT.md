@@ -51,9 +51,14 @@ Required files:
 - [ ] `config.py` - Configuration
 - [ ] `comfyui_api.py` - ComfyUI integration
 - [ ] `requirements.txt` - Dependencies
-- [ ] `flux1_krea_dev.json` - Workflow file
+- [ ] `workflows/text2img/flux_krea_text2img.json` - Default text-to-image workflow
+- [ ] `workflows/text2img/flux_krea_text2img_meta.json` - Workflow metadata
+- [ ] `workflows/img2img/flux_img2img.json` - Default image-to-image workflow
+- [ ] `workflows/img2img/flux_img2img_meta.json` - Workflow metadata
 - [ ] `start_comfy.sh` - ComfyUI launcher
 - [ ] `start_app.sh` - App launcher
+
+> If you're migrating from an older manual setup that only used `flux1_krea_dev.json`, copy that file into `workflows/text2img/` and rename it to `flux_krea_text2img.json` so the workflow manager can pick it up.
 
 Documentation:
 - [ ] `README.md` - Full guide

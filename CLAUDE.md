@@ -104,11 +104,9 @@ python test_comprehensive.py         # Comprehensive integration tests
 - Easy customization point for different setups
 
 **`workflows/`** (Phase 3 - Workflow organization)
-- `text2img/`: Text-to-image workflows
-- `img2img/`: Image-to-image workflows
-- `controlnet/`: ControlNet workflows
-- `upscale/`: Upscaling workflows
-- `custom/`: User-imported workflows
+- `text2img/`: Default FLUX text-to-image workflow (`flux_krea_text2img.json` + metadata)
+- `img2img/`: Default FLUX image-to-image workflow (`flux_img2img.json` + metadata)
+- Additional directories (e.g., `controlnet/`, `upscale/`) can be added by users as needed
 
 ### Mode System Architecture
 
@@ -362,11 +360,12 @@ ai-image-chat/
 │   ├── __init__.py           # Module exports
 │   └── image_utils.py        # PIL/base64 helpers
 ├── workflows/                 # Workflow library (Phase 3)
-│   ├── text2img/             # Text-to-image workflows
-│   ├── img2img/              # Image-to-image workflows
-│   ├── controlnet/           # ControlNet workflows
-│   ├── upscale/              # Upscaling workflows
-│   └── custom/               # User-imported workflows
+│   ├── text2img/
+│   │   ├── flux_krea_text2img.json        # Default text-to-image workflow shipped with repo
+│   │   └── flux_krea_text2img_meta.json   # Metadata consumed by workflow manager
+│   └── img2img/
+│       ├── flux_img2img.json              # Default image-to-image workflow shipped with repo
+│       └── flux_img2img_meta.json         # Metadata consumed by workflow manager
 ├── scripts/                   # Development scripts
 │   └── setup-dev.sh           # Development environment setup
 ├── requirements.txt           # Python dependencies
@@ -374,7 +373,7 @@ ai-image-chat/
 ├── pyproject.toml             # Tool configuration (black, ruff, pytest, mypy)
 ├── .pre-commit-config.yaml    # Pre-commit hooks configuration
 ├── Makefile                   # Development commands
-├── flux1_krea_dev.json        # Legacy workflow file (still supported)
+├── flux1_krea_dev.json        # Legacy workflow file (only needed if manually copying older setups)
 ├── start_comfy.sh             # ComfyUI launcher script
 ├── start_app.sh               # App launcher script
 ├── check_code.sh              # Code quality checker

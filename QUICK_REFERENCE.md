@@ -71,7 +71,13 @@ ai-image-chat/
 ├── config.py                   # Configuration settings
 ├── comfyui_api.py             # ComfyUI API bridge
 ├── requirements.txt           # Python dependencies
-├── flux1_krea_dev.json        # ComfyUI workflow
+├── workflows/
+│   ├── text2img/
+│   │   ├── flux_krea_text2img.json        # Default text-to-image workflow
+│   │   └── flux_krea_text2img_meta.json   # Metadata for workflow manager
+│   └── img2img/
+│       ├── flux_img2img.json              # Default image-to-image workflow
+│       └── flux_img2img_meta.json         # Metadata for workflow manager
 ├── outputs/                   # Generated images (auto-created)
 ├── prompt_history.json        # Saved prompts
 ├── README.md                  # User documentation
@@ -81,6 +87,8 @@ ai-image-chat/
 ├── ROADMAP.md                 # Feature roadmap
 └── QUICK_REFERENCE.md         # This file
 ```
+
+> **Note:** The repository ships with the workflow manager structure under `workflows/`. The legacy single-file workflow `flux1_krea_dev.json` is only needed if you're migrating an older manual setup and must copy it in yourself.
 
 ---
 
