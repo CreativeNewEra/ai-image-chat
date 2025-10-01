@@ -50,19 +50,35 @@ class VRAMMonitor:
             )
 
             if result.returncode == 0:
-                used, total = map(int, result.stdout.strip().split(","))
-                used_gb = used / 1024
-                total_gb = total / 1024
-                percentage = (used / total) * 100
+                lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+                for line in lines:
+                    parts = [part.strip() for part in line.split(",")]
+                    if len(parts) < 2:
+                        continue
 
-                self.cached_vram = {
-                    "used_gb": round(used_gb, 1),
-                    "total_gb": round(total_gb, 1),
-                    "percentage": round(percentage, 1),
-                    "available": True,
-                }
-                self.last_check = current_time
-                return self.cached_vram
+                    try:
+                        used = int(parts[0])
+                        total = int(parts[1])
+                    except ValueError:
+                        logger.debug("Unable to parse VRAM usage from line: %s", line)
+                        continue
+
+                    if total <= 0:
+                        logger.debug("Ignoring VRAM usage entry with non-positive total: %s", line)
+                        continue
+
+                    used_gb = used / 1024
+                    total_gb = total / 1024
+                    percentage = (used / total) * 100 if total else 0
+
+                    self.cached_vram = {
+                        "used_gb": round(used_gb, 1),
+                        "total_gb": round(total_gb, 1),
+                        "percentage": round(percentage, 1),
+                        "available": True,
+                    }
+                    self.last_check = current_time
+                    return self.cached_vram
         except Exception as e:
             logger.debug(f"VRAM check failed: {e}")
 
