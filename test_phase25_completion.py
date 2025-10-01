@@ -154,13 +154,7 @@ def test_enhanced_gallery():
         expected_imgs = [entry["image"] for entry in metadata_sorted]
         expected_seeds = [entry["seed"] for entry in metadata_sorted]
 
-        # Compare the seed order of the sorted images to the expected seed order
-        sorted_imgs_seeds = [seed_lookup[id(img)] for img in sorted_imgs]
-        assert (
-            sorted_imgs_seeds == expected_seeds
-        ), "Image order should follow ascending seed order"
-
-        # Double-check that each returned image aligns with the expected seed sequence
+        # Verify each returned image aligns with the expected seed sequence
         # For each image in sorted_imgs, find its seed from gallery metadata
         sorted_seeds = [
             entry["seed"]

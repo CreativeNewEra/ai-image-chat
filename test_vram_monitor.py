@@ -7,7 +7,7 @@ dotenv_stub = types.ModuleType("dotenv")
 dotenv_stub.load_dotenv = lambda *args, **kwargs: None
 sys.modules.setdefault("dotenv", dotenv_stub)
 
-from core.vram_monitor import VRAMMonitor
+from core.vram_monitor import VRAMMonitor  # noqa: E402 - Import after module stub
 
 
 class DummyCompletedProcess:
