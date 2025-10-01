@@ -164,7 +164,7 @@ class PromptHistory:
 
                 added_count = max(0, len(self.prompts) - original_len)
 
-                if added_count > 0 or trimmed_count > 0:
+                if added_count > 0 or duplicate_count > 0 or invalid_count > 0 or trimmed_count > 0:
                     self.save_to_file()
 
                 prompt_word = "prompt" if added_count == 1 else "prompts"
