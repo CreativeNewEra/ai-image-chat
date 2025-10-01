@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+
+# Outputs
+outputs/
+*.png
+*.jpg
+*.jpeg
+
+# Prompt history
+prompt_history.json
+prompt_export_*.json
+
+# Gradio
+gradio_cached_examples/
+flagged/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs (but keep TROUBLESHOOTING.md)
+*.log
+
+# Test files - KEEP ALL TEST FILES FOR CI/CD
+# test_*.py files are important for automated testing
+# !test_new_features.py
+# !test_buttons.py
+
+# ComfyUI workflows (except templates in workflows/ directory)
+flux1_krea_dev.json
+
+# Session data
+gallery_images.json
+session_stats.json
+vram_cache.json
+
+# Environment files
+.env
+.env.local
+
+# Development
+*.bak
+*.orig
+*.tmp

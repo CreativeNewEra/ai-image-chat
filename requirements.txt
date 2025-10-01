@@ -1,0 +1,13 @@
+# AI Image Chat - Python Dependencies
+
+# Core
+gradio>=4.0.0
+requests>=2.31.0
+pillow>=10.0.0
+
+# PyTorch (if not already installed via conda)
+# Install manually with CUDA support:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+
+# WebSocket for ComfyUI (if needed for real-time updates)
+websocket-client>=1.6.0

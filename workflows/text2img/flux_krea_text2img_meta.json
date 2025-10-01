@@ -1,0 +1,14 @@
+{
+  "name": "FLUX Krea Text2Image",
+  "description": "Default FLUX text-to-image workflow with Krea optimizations. Uses unstableEvolution finetune with dual CLIP loaders and simple sampler.",
+  "category": "Text2Image",
+  "tags": [
+    "flux",
+    "text2img",
+    "krea",
+    "default"
+  ],
+  "author": "ant",
+  "created_at": "2025-09-30T12:00:00",
+  "modified_at": "2025-09-30T12:00:00"
+}
