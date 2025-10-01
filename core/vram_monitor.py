@@ -69,7 +69,7 @@ class VRAMMonitor:
 
                     used_gb = used / 1024
                     total_gb = total / 1024
-                    percentage = (used / total) * 100 if total else 0
+                    percentage = (used / total) * 100
 
                     self.cached_vram = {
                         "used_gb": round(used_gb, 1),
