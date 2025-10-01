@@ -80,21 +80,26 @@ IDLE (0 GB) ←→ CHAT (~5 GB) ←→ VISION (~7 GB) ←→ GENERATE (~12 GB)
 
 ```
 ai-image-chat/
-├── app.py                      # Main Gradio application
-├── config.py                   # Configuration
-├── comfyui_api.py             # ComfyUI integration
-├── core/                       # Business logic modules
-│   ├── mode_manager.py        # Mode switching
-│   ├── image_gallery.py       # Gallery management
-│   ├── workflow_manager.py    # Workflow support
-│   ├── generation_queue.py    # Batch processing
-│   └── ...                    # Other core modules
-├── utils/                      # Utility functions
-├── workflows/                  # ComfyUI workflows
-│   ├── text2img/
+├── app.py                      # Main Gradio application entrypoint
+├── config.py                   # Runtime configuration values
+├── comfyui_api.py              # ComfyUI integration helpers
+├── core/                       # Core business logic modules
+│   ├── generation_queue.py     # Batch processing pipeline
+│   ├── image_gallery.py        # Gallery management utilities
+│   ├── mode_manager.py         # Mode switching state machine
+│   ├── workflow_manager.py     # Workflow discovery helpers
+│   └── ...                     # Additional VRAM + session helpers
+├── ui/                         # Placeholder package for UI components
+├── utils/                      # Shared utility helpers
+│   └── image_utils.py          # Image conversion helpers
+├── workflows/                  # ComfyUI workflow JSONs
 │   ├── img2img/
-│   └── ...
-└── tests/                      # Test files
+│   └── text2img/
+├── test_buttons.py             # Targeted UI regression checks
+├── test_comprehensive.py       # End-to-end smoke tests
+├── test_new_features.py        # Feature-specific unit tests
+├── test_phase25_completion.py  # Phase 2.5 regression coverage
+└── test_workflow_manager.py    # Workflow manager unit tests
 ```
 
 ## 🎯 Usage Workflow
