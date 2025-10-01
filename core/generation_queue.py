@@ -116,6 +116,14 @@ class GenerationQueue:
         self.jobs = [job for job in self.jobs
                     if job.status not in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]]
         removed = original_count - len(self.jobs)
+
+        if self.current_job and (
+            self.current_job.status != JobStatus.PROCESSING or
+            self.current_job not in self.jobs
+        ):
+            self.current_job = None
+            self.is_processing = False
+
         if removed > 0:
             logger.info(f"Cleared {removed} finished jobs")
 
@@ -152,8 +160,25 @@ class GenerationQueue:
             "completed": completed,
             "failed": failed,
             "paused": self.paused,
-            "current_job": self.current_job.to_dict() if self.current_job else None
+            "current_job": self._get_current_job_info()
         }
+
+    def _get_current_job_info(self) -> Optional[Dict]:
+        """Return information about the current job if it's valid."""
+        if not self.current_job:
+            return None
+
+        if self.current_job not in self.jobs:
+            if self.current_job.status != JobStatus.PROCESSING:
+                self.current_job = None
+            return None
+
+        if self.current_job.status == JobStatus.PROCESSING:
+            return self.current_job.to_dict()
+
+        # Job is still referenced but no longer processing; clear it.
+        self.current_job = None
+        return None
 
     def get_queue_display(self) -> str:
         """Get formatted queue status for display"""
