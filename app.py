@@ -364,7 +364,7 @@ def add_batch_variations(prompt_text, steps, width, height, seed_value, count=4)
             seed = int(seed_value)
         except ValueError:
             logger.warning(
-                "Invalid seed input '%s'; using history/random fallback", seed_value
+                f"Invalid seed input '{seed_value}'; using history/random fallback"
             )
             seed = None
 
