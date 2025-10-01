@@ -52,16 +52,25 @@ class ModeManager:
         """Unload everything"""
         logger.info("Switching to IDLE mode...")
 
-        # Unload Ollama
-        try:
-            requests.post(
-                f"{OLLAMA_API}/generate",
-                json={"model": OLLAMA_CHAT_MODEL, "keep_alive": 0},
-                timeout=5
-            )
-            logger.info("✓ Ollama unloaded")
-        except:
-            pass
+        # Unload Ollama models
+        for model_name in (OLLAMA_CHAT_MODEL, OLLAMA_VISION_MODEL):
+            try:
+                response = requests.post(
+                    f"{OLLAMA_API}/generate",
+                    json={"model": model_name, "keep_alive": 0},
+                    timeout=5
+                )
+                if response.status_code == 200:
+                    logger.info(f"✓ Ollama model '{model_name}' unloaded")
+                else:
+                    logger.warning(
+                        "⚠️ Ollama responded with status %s while unloading '%s': %s",
+                        response.status_code,
+                        model_name,
+                        response.text
+                    )
+            except requests.RequestException as exc:
+                logger.warning("⚠️ Failed to unload Ollama model '%s': %s", model_name, exc)
 
         # Clear CUDA cache
         if torch and torch.cuda.is_available():
