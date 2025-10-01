@@ -49,7 +49,7 @@ class ComfyUIBridge:
         except requests.RequestException as exc:
             logger.exception("Error getting ComfyUI status: %s", exc)
         except ValueError as exc:
-            logger.exception("Invalid JSON from ComfyUI status response: %s", exc)
+            logger.exception("Invalid JSON from ComfyUI status response")
         return {"available": False}
     
     def load_workflow(self):
