@@ -49,6 +49,7 @@ def test_generation_queue():
     next_job = queue.get_next_job()
     assert next_job is not None
     assert next_job.status == JobStatus.PENDING
+    queue.current_job = next_job
     print(f"✓ Got next job: {next_job.prompt[:20]}...")
 
     # Test 4: Update job status
@@ -88,6 +89,9 @@ def test_generation_queue():
     queue.clear_completed()
     # Should have removed completed and cancelled jobs
     assert len(queue.jobs) < original_count
+    assert queue.current_job is None, "Current job reference should be cleared"
+    status_after_clear = queue.get_queue_status()
+    assert status_after_clear["current_job"] is None, "Queue status should not expose stale current job"
     print(f"✓ Cleared completed/cancelled jobs. {len(queue.jobs)} remaining (was {original_count})")
 
     # Test 8: Estimate time remaining

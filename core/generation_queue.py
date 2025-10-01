@@ -111,11 +111,28 @@ class GenerationQueue:
         return False
 
     def clear_completed(self):
-        """Remove completed, failed, and cancelled jobs"""
+        """Remove completed, failed, and cancelled jobs
+
+        Note: If current_job is removed during cleanup, we clear the reference.
+        This is safe even if a job is actively processing, as we only clear
+        the reference when the job is no longer in the queue or not processing.
+        """
         original_count = len(self.jobs)
         self.jobs = [job for job in self.jobs
                     if job.status not in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]]
         removed = original_count - len(self.jobs)
+
+        # Clear stale current_job references after removing finished work
+        if self.current_job:
+            # If job is not processing, clear the reference
+            if self.current_job.status != JobStatus.PROCESSING:
+                self.current_job = None
+                self.is_processing = False
+            # If job was removed from the queue, clear the reference
+            elif self.current_job not in self.jobs:
+                self.current_job = None
+                self.is_processing = False
+
         if removed > 0:
             logger.info(f"Cleared {removed} finished jobs")
 
@@ -152,9 +169,27 @@ class GenerationQueue:
             "completed": completed,
             "failed": failed,
             "paused": self.paused,
-            "current_job": self.current_job.to_dict() if self.current_job else None
+            "current_job": self._get_current_job_info()
         }
+        """Return information about the current job if it's valid. Does not modify state."""
+        if not self.current_job:
+            return None
 
+        if self.current_job not in self.jobs:
+            return None
+
+        if self.current_job.status == JobStatus.PROCESSING:
+            return self.current_job.to_dict()
+
+        # Job is still referenced but no longer processing.
+        return None
+
+    def _cleanup_current_job_reference(self):
+        """Clear current_job if it is no longer valid."""
+        if not self.current_job:
+            return
+        if self.current_job not in self.jobs or self.current_job.status != JobStatus.PROCESSING:
+            self.current_job = None
     def get_queue_display(self) -> str:
         """Get formatted queue status for display"""
         status = self.get_queue_status()
