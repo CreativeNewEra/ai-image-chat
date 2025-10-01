@@ -38,6 +38,6 @@ jobs:
 
     - name: Run tests
       run: |
-        python test_new_features.py
-        python test_workflow_manager.py
-        python test_comprehensive.py
+        python -m pytest test_new_features.py -v
+        python -m pytest test_workflow_manager.py -v
+        python -m pytest test_comprehensive.py -v
