@@ -58,3 +58,13 @@ vram_cache.json
 *.bak
 *.orig
 *.tmp
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Linting & Type Checking
+.mypy_cache/
+.ruff_cache/

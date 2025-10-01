@@ -3,8 +3,13 @@ AI Image Chat - Configuration
 All settings in one place
 """
 
-import os
 import logging
+import os
+
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # ============================================================================
 # LOGGING CONFIGURATION
@@ -13,11 +18,8 @@ import logging
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('ai_image_chat.log'),
-        logging.StreamHandler()
-    ]
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler("ai_image_chat.log"), logging.StreamHandler()],
 )
 
 # Set log level from environment variable if provided
@@ -29,29 +31,29 @@ logging.getLogger().setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
 # ============================================================================
 
 # ComfyUI installation path
-COMFYUI_PATH = "/home/ant/AI/ComfyUI"
+COMFYUI_PATH = os.getenv("COMFYUI_PATH", "/home/ant/AI/ComfyUI")
 
 # Workflow file (in same directory as this app)
-WORKFLOW_PATH = "./flux1_krea_dev.json"
+WORKFLOW_PATH = os.getenv("WORKFLOW_PATH", "./flux1_krea_dev.json")
 
 # Your custom FLUX finetune
-FINETUNE_NAME = "unstableEvolution_Fp811GB.safetensors"
+FINETUNE_NAME = os.getenv("FINETUNE_NAME", "unstableEvolution_Fp811GB.safetensors")
 
 # Output directory for saved images
-OUTPUT_DIR = "./outputs"
+OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./outputs")
 
 # Prompt history file
-PROMPT_HISTORY_FILE = "./prompt_history.json"
+PROMPT_HISTORY_FILE = os.getenv("PROMPT_HISTORY_FILE", "./prompt_history.json")
 
 # ============================================================================
 # API ENDPOINTS
 # ============================================================================
 
 # ComfyUI API (local on laptop)
-COMFYUI_API = "http://localhost:8188"
+COMFYUI_API = os.getenv("COMFYUI_API", "http://localhost:8188")
 
 # Ollama API (local on laptop)
-OLLAMA_API = "http://localhost:11434/api"
+OLLAMA_API = os.getenv("OLLAMA_API", "http://localhost:11434/api")
 
 # ============================================================================
 # MODELS
@@ -59,11 +61,11 @@ OLLAMA_API = "http://localhost:11434/api"
 
 # Ollama chat model for prompt refinement (text-only)
 # Options: mistral:7b (4.4GB), llama3.1:latest (4.9GB)
-OLLAMA_CHAT_MODEL = "llama3.1:latest"
+OLLAMA_CHAT_MODEL = os.getenv("OLLAMA_CHAT_MODEL", "llama3.1:latest")
 
 # Ollama vision model for image-aware iteration
 # Options: qwen2.5vl:latest, llava:7b, llava:13b
-OLLAMA_VISION_MODEL = "qwen2.5vl:latest"
+OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "qwen2.5vl:latest")
 
 # ============================================================================
 # GENERATION DEFAULTS
@@ -154,5 +156,5 @@ VRAM_ESTIMATES = {
     "idle": "0 GB",
     "chat": "~5 GB (llama3.1)",
     "vision": "~7 GB (qwen2.5vl)",
-    "generate": "~12 GB (ComfyUI + FLUX finetune)"
+    "generate": "~12 GB (ComfyUI + FLUX finetune)",
 }

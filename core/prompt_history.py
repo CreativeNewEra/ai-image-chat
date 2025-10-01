@@ -4,10 +4,10 @@ Prompt History Module
 Manages prompt history with search, tagging, export/import functionality.
 """
 
-import os
 import json
-from datetime import datetime
 import logging
+import os
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class PromptHistory:
     """Manage prompt history with search, tagging, and export"""
 
-    def __init__(self, history_file='prompt_history.json'):
+    def __init__(self, history_file="prompt_history.json"):
         self.prompts = []  # List of prompt entries
         self.max_history = 50
         self.history_file = history_file
@@ -25,9 +25,9 @@ class PromptHistory:
         """Load prompt history from JSON file"""
         if os.path.exists(self.history_file):
             try:
-                with open(self.history_file, 'r') as f:
+                with open(self.history_file) as f:
                     data = json.load(f)
-                    self.prompts = data.get('prompts', [])
+                    self.prompts = data.get("prompts", [])
             except Exception as e:
                 logger.error(f"Error loading prompt history: {e}")
                 self.prompts = []
@@ -35,8 +35,8 @@ class PromptHistory:
     def save_to_file(self):
         """Save prompt history to JSON file"""
         try:
-            with open(self.history_file, 'w') as f:
-                json.dump({'prompts': self.prompts}, f, indent=2)
+            with open(self.history_file, "w") as f:
+                json.dump({"prompts": self.prompts}, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving prompt history: {e}")
 
@@ -47,28 +47,28 @@ class PromptHistory:
 
         # Check if prompt already exists (avoid exact duplicates)
         for entry in self.prompts:
-            if entry['prompt'] == prompt_text:
+            if entry["prompt"] == prompt_text:
                 # Update timestamp and count
-                entry['last_used'] = datetime.now().isoformat()
-                entry['use_count'] = entry.get('use_count', 1) + 1
+                entry["last_used"] = datetime.now().isoformat()
+                entry["use_count"] = entry.get("use_count", 1) + 1
                 self.save_to_file()
                 return
 
         # Add new prompt
         entry = {
-            'prompt': prompt_text,
-            'timestamp': datetime.now().isoformat(),
-            'last_used': datetime.now().isoformat(),
-            'use_count': 1,
-            'settings': settings or {},
-            'tags': []
+            "prompt": prompt_text,
+            "timestamp": datetime.now().isoformat(),
+            "last_used": datetime.now().isoformat(),
+            "use_count": 1,
+            "settings": settings or {},
+            "tags": [],
         }
 
         self.prompts.insert(0, entry)
 
         # Limit history size
         if len(self.prompts) > self.max_history:
-            self.prompts = self.prompts[:self.max_history]
+            self.prompts = self.prompts[: self.max_history]
 
         self.save_to_file()
 
@@ -83,9 +83,10 @@ class PromptHistory:
 
         query_lower = query.lower()
         results = [
-            entry for entry in self.prompts
-            if query_lower in entry['prompt'].lower()
-            or any(query_lower in tag.lower() for tag in entry.get('tags', []))
+            entry
+            for entry in self.prompts
+            if query_lower in entry["prompt"].lower()
+            or any(query_lower in tag.lower() for tag in entry.get("tags", []))
         ]
         return results
 
@@ -94,11 +95,11 @@ class PromptHistory:
         choices = []
         for entry in self.prompts[:limit]:
             # Truncate long prompts for display
-            prompt = entry['prompt']
+            prompt = entry["prompt"]
             if len(prompt) > 60:
                 prompt = prompt[:60] + "..."
 
-            use_info = f" ({entry['use_count']}x)" if entry.get('use_count', 1) > 1 else ""
+            use_info = f" ({entry['use_count']}x)" if entry.get("use_count", 1) > 1 else ""
             choices.append(f"{prompt}{use_info}")
 
         return choices
@@ -110,8 +111,8 @@ class PromptHistory:
 
         # Find matching prompt
         for entry in self.prompts:
-            if entry['prompt'].startswith(clean_text.rstrip(".")):
-                return entry['prompt']
+            if entry["prompt"].startswith(clean_text.rstrip(".")):
+                return entry["prompt"]
 
         return display_text
 
@@ -121,8 +122,8 @@ class PromptHistory:
             filepath = f"prompt_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 
         try:
-            with open(filepath, 'w') as f:
-                json.dump({'prompts': self.prompts}, f, indent=2)
+            with open(filepath, "w") as f:
+                json.dump({"prompts": self.prompts}, f, indent=2)
             return f"✅ Exported {len(self.prompts)} prompts to {filepath}"
         except Exception as e:
             return f"❌ Export failed: {e}"
@@ -130,22 +131,22 @@ class PromptHistory:
     def import_prompts(self, filepath):
         """Import prompts from JSON file"""
         try:
-            with open(filepath, 'r') as f:
+            with open(filepath) as f:
                 data = json.load(f)
-                imported = data.get('prompts', [])
+                imported = data.get("prompts", [])
 
                 # Merge with existing, avoiding duplicates
                 for entry in imported:
-                    prompt_text = entry.get('prompt', '')
+                    prompt_text = entry.get("prompt", "")
                     if prompt_text:
                         # Check if already exists
-                        exists = any(p['prompt'] == prompt_text for p in self.prompts)
+                        exists = any(p["prompt"] == prompt_text for p in self.prompts)
                         if not exists:
                             self.prompts.append(entry)
 
                 # Limit size
                 if len(self.prompts) > self.max_history:
-                    self.prompts = self.prompts[:self.max_history]
+                    self.prompts = self.prompts[: self.max_history]
 
                 self.save_to_file()
                 return f"✅ Imported {len(imported)} prompts"

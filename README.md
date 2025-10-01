@@ -5,6 +5,8 @@ AI-powered image generation application combining ComfyUI + FLUX for image gener
 [![Phase 3](https://img.shields.io/badge/Phase-3%20Complete-brightgreen)]()
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)]()
 [![License](https://img.shields.io/badge/License-MIT-yellow)]()
+[![Tests](https://github.com/CreativeNewEra/ai-image-chat/workflows/Tests%20and%20Linting/badge.svg)](https://github.com/CreativeNewEra/ai-image-chat/actions/workflows/test.yml)
+[![Documentation](https://github.com/CreativeNewEra/ai-image-chat/workflows/Documentation%20Check/badge.svg)](https://github.com/CreativeNewEra/ai-image-chat/actions/workflows/docs.yml)
 
 ## ✨ Features
 

@@ -6,7 +6,9 @@ Quick test to verify workflow manager functionality.
 """
 
 import sys
+
 from core import WorkflowManager
+
 
 def test_workflow_manager():
     """Test workflow manager basic functionality"""

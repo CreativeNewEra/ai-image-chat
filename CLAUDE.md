@@ -74,7 +74,7 @@ python test_comprehensive.py         # Comprehensive integration tests
 - Workflow manager integration
 - Batch queue and gallery management
 
-**`core/`** (modular architecture - **10** business logic classes)
+**`core/`** (modular architecture - **11** business logic classes + exceptions)
 - `mode_manager.py`: Mode switching and VRAM management
 - `image_gallery.py`: Session storage with auto-save, filtering, sorting, favorites
 - `vram_monitor.py`: Real-time GPU VRAM monitoring
@@ -85,6 +85,7 @@ python test_comprehensive.py         # Comprehensive integration tests
 - `smart_switch.py`: Context-aware mode suggestions
 - `generation_queue.py`: Batch generation queue management
 - `workflow_manager.py`: Multiple workflow support with categories
+- `exceptions.py`: Custom exception hierarchy for error handling
 
 **`utils/`** (helper functions)
 - `image_utils.py`: PIL/base64 image conversion utilities
@@ -239,6 +240,68 @@ The app binds to `0.0.0.0:7860` for LAN access. ComfyUI must be started with `--
 
 ## Development Guidelines
 
+### Code Quality & Formatting
+
+The project uses automated code formatting and linting to maintain consistent code quality:
+
+**Tools:**
+- **Black**: Python code formatter (line length: 100)
+- **Ruff**: Fast Python linter with auto-fix
+- **Mypy**: Static type checker for Python
+- **Pre-commit**: Git hooks for automated checks
+
+**Setup:**
+```bash
+# Quick setup (installs deps, hooks, and runs initial formatting)
+bash scripts/setup-dev.sh
+
+# Or manually
+pip install -r requirements-dev.txt
+pre-commit install
+```
+
+**Configuration Files:**
+- `pyproject.toml`: Black, Ruff, pytest, coverage, mypy configuration
+- `.pre-commit-config.yaml`: Pre-commit hooks configuration
+- `Makefile`: Convenient commands for formatting, linting, testing
+
+**Pre-commit Hooks:**
+Pre-commit hooks run automatically on `git commit`. They:
+1. Format code with Black (auto-fix)
+2. Lint with Ruff (auto-fix)
+3. Remove trailing whitespace (auto-fix)
+4. Ensure files end with newline (auto-fix)
+5. Validate YAML/JSON syntax
+6. Check for large files (>100MB)
+7. Detect private keys
+8. Check for merge conflicts
+
+**Running Manually:**
+```bash
+make format           # Format with Black
+make lint             # Lint with Ruff
+make type-check       # Run mypy type checking
+make check            # Format + Lint + Type-check + Test
+pre-commit run --all-files  # Run all hooks
+```
+
+**Type Checking:**
+The project uses gradual typing - types are added incrementally rather than all at once.
+
+- **Configuration**: `mypy.ini` with lenient global settings
+- **Strictly Typed Modules**: `core/vram_estimator.py`, `core/seed_manager.py`, `core/prompt_history.py`, `utils/image_utils.py`
+- **Run mypy**: `make type-check` or `mypy .`
+- **CI Integration**: Type checking runs automatically on PRs
+
+See **[docs/TYPING.md](./docs/TYPING.md)** for complete type hinting guide.
+
+**Skipping Hooks (when needed):**
+```bash
+git commit --no-verify -m "WIP: work in progress"
+```
+
+See **[CONTRIBUTING.md](./CONTRIBUTING.md)** for complete code style guide.
+
 ### Adding New Chat Models
 1. Ensure model is pulled: `ollama pull model-name`
 2. Add to dropdown in `app.py`: `get_available_models()`
@@ -282,7 +345,7 @@ ai-image-chat/
 ├── app.py                      # Main Gradio application (~2000 lines, 65KB)
 ├── comfyui_api.py             # ComfyUI API bridge (~350 lines)
 ├── config.py                  # Configuration (130 lines)
-├── core/                      # Core business logic modules (10 classes)
+├── core/                      # Core business logic modules (11 classes + exceptions)
 │   ├── __init__.py           # Module exports
 │   ├── vram_monitor.py       # GPU VRAM monitoring
 │   ├── session_stats.py      # Generation statistics
@@ -293,7 +356,8 @@ ai-image-chat/
 │   ├── mode_manager.py       # Mode switching logic
 │   ├── image_gallery.py      # Image gallery management (enhanced)
 │   ├── generation_queue.py   # Batch generation queue
-│   └── workflow_manager.py   # Multiple workflow support (Phase 3)
+│   ├── workflow_manager.py   # Multiple workflow support (Phase 3)
+│   └── exceptions.py         # Custom exception hierarchy
 ├── utils/                     # Utility functions
 │   ├── __init__.py           # Module exports
 │   └── image_utils.py        # PIL/base64 helpers
@@ -303,7 +367,13 @@ ai-image-chat/
 │   ├── controlnet/           # ControlNet workflows
 │   ├── upscale/              # Upscaling workflows
 │   └── custom/               # User-imported workflows
+├── scripts/                   # Development scripts
+│   └── setup-dev.sh           # Development environment setup
 ├── requirements.txt           # Python dependencies
+├── requirements-dev.txt       # Development dependencies
+├── pyproject.toml             # Tool configuration (black, ruff, pytest, mypy)
+├── .pre-commit-config.yaml    # Pre-commit hooks configuration
+├── Makefile                   # Development commands
 ├── flux1_krea_dev.json        # Legacy workflow file (still supported)
 ├── start_comfy.sh             # ComfyUI launcher script
 ├── start_app.sh               # App launcher script
@@ -319,6 +389,7 @@ ai-image-chat/
 ├── README.md                 # User guide
 ├── QUICKSTART.md             # Quick setup guide
 ├── DEPLOYMENT.md             # Production deployment
+├── CONTRIBUTING.md           # Contributor guide & code style
 ├── CLAUDE.md                 # This file - Developer guide
 ├── TROUBLESHOOTING.md        # Issue tracking & solutions
 ├── PHASE3_TROUBLESHOOTING.md # Phase 3 specific troubleshooting
@@ -338,10 +409,11 @@ ai-image-chat/
 
 ### Changes:
 - Enhanced app.py to ~2,000 lines (added batch queue, gallery features, workflow manager)
-- Created `core/` module with **10** business logic classes
+- Created `core/` module with **11** business logic classes + **custom exception hierarchy**
 - Enhanced `image_gallery.py` with filtering, sorting, favorites, and deletion
 - Added `generation_queue.py` for batch processing
 - Added `workflow_manager.py` for multiple workflow support (Phase 3)
+- Added `exceptions.py` with 8 custom exception classes for better error handling
 - Created `workflows/` directory structure with category organization
 - Enhanced `comfyui_api.py` with `load_workflow_from_data()` method
 - Created `utils/` module for helper functions
@@ -358,7 +430,90 @@ from core import VRAMMonitor, Mode, ModeManager, WorkflowManager
 from core.vram_monitor import VRAMMonitor
 from core.workflow_manager import WorkflowManager, Workflow, WorkflowMetadata
 from utils import pil_to_base64
+
+# Import custom exceptions
+from core import (
+    AIImageChatException,
+    ComfyUINotAvailableError,
+    OllamaConnectionError,
+    WorkflowLoadError,
+    ModeTransitionError,
+    VRAMInsufficientError,
+    ImageGenerationError,
+    ModelNotFoundError,
+)
 ```
+
+### Exception Hierarchy:
+
+The application uses a custom exception hierarchy for better error handling and debugging. All custom exceptions inherit from `AIImageChatException`, making it easy to catch any app-specific error.
+
+**Exception Classes:**
+
+1. **`AIImageChatException`** (base class)
+   - Base exception for all AI Image Chat specific errors
+   - Use to catch any app-specific error with a single except clause
+
+2. **`ComfyUINotAvailableError`**
+   - Raised when ComfyUI is not available or not responding
+   - Common causes: ComfyUI not started, wrong API endpoint, network issues
+   - Location: `comfyui_api.py`, `mode_manager.py`
+
+3. **`OllamaConnectionError`**
+   - Raised when Ollama service is not available or not responding
+   - Common causes: Ollama not started, model not pulled, service crashed
+   - Location: `mode_manager.py`, `app.py`
+
+4. **`VRAMInsufficientError`**
+   - Raised when there is insufficient VRAM for an operation
+   - Common causes: Resolution too high, other processes using GPU
+   - Location: Can be raised by `vram_estimator.py` (optional usage)
+
+5. **`WorkflowLoadError`**
+   - Raised when a ComfyUI workflow fails to load or parse
+   - Common causes: Malformed JSON, missing nodes, incompatible version
+   - Location: `comfyui_api.py`, `workflow_manager.py`
+
+6. **`ModeTransitionError`**
+   - Raised when switching between modes fails
+   - Common causes: Service not responding, VRAM not freed, timeout
+   - Location: `mode_manager.py`
+
+7. **`ImageGenerationError`**
+   - Raised when image generation fails
+   - Common causes: Workflow execution error, timeout, missing models
+   - Location: `comfyui_api.py`, `app.py`
+
+8. **`ModelNotFoundError`**
+   - Raised when a required model file is not found
+   - Common causes: Model not downloaded, wrong filename, wrong directory
+   - Location: `comfyui_api.py`
+
+**Usage Example:**
+```python
+from core import ModeManager, OllamaConnectionError, ModeTransitionError
+
+try:
+    mode_manager.switch_to_chat()
+except OllamaConnectionError as e:
+    # Handle Ollama-specific error
+    logger.error(f"Ollama not available: {e}")
+    show_user_message("Please start Ollama with 'ollama serve'")
+except ModeTransitionError as e:
+    # Handle general mode transition error
+    logger.error(f"Mode switch failed: {e}")
+    show_user_message("Failed to switch modes. Try switching to Idle first.")
+except AIImageChatException as e:
+    # Catch any other app-specific error
+    logger.error(f"Application error: {e}")
+    show_user_message(f"Error: {e}")
+```
+
+**Exception Documentation:**
+All custom exceptions are documented in `core/exceptions.py` with:
+- Clear docstrings explaining when they're raised
+- Common causes and solutions
+- Usage examples
 
 ### Benefits:
 - **Maintainability:** Single responsibility per module
@@ -366,6 +521,7 @@ from utils import pil_to_base64
 - **Readability:** Easier to find and understand code
 - **Scalability:** Ready for Phase 3 features
 - **Flexibility:** Multiple workflows, batch processing, advanced gallery
+- **Error Handling:** Custom exceptions for better debugging and user feedback
 
 See **[REFACTORING_SUMMARY.md](./REFACTORING_SUMMARY.md)** and **[PHASE3_PROGRESS.md](./PHASE3_PROGRESS.md)** for complete details.
 
@@ -374,6 +530,7 @@ See **[REFACTORING_SUMMARY.md](./REFACTORING_SUMMARY.md)** and **[PHASE3_PROGRES
 - **[README.md](./README.md)** - Start here for setup and usage
 - **[QUICKSTART.md](./QUICKSTART.md)** - Quick setup guide
 - **[QUICK_REFERENCE.md](./QUICK_REFERENCE.md)** - Commands and shortcuts cheat sheet
+- **[CONTRIBUTING.md](./CONTRIBUTING.md)** - Contributor guide & code style
 - **[TROUBLESHOOTING.md](./TROUBLESHOOTING.md)** - Solutions to common issues
 - **[PHASE3_TROUBLESHOOTING.md](./PHASE3_TROUBLESHOOTING.md)** - Phase 3 specific troubleshooting
 - **[BUTTON_DEBUG_CHECKLIST.md](./BUTTON_DEBUG_CHECKLIST.md)** - Quick fix for button issues

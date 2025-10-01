@@ -5,8 +5,9 @@ Comprehensive Test Suite
 Tests all components that don't require external services.
 """
 
-import sys
 import os
+import sys
+
 
 def test_imports():
     """Test all imports work"""
@@ -16,24 +17,15 @@ def test_imports():
 
     try:
         print("\n1. Testing core imports...")
-        from core import (
-            VRAMMonitor, SessionStats, VRAMEstimator, SeedManager,
-            PromptHistory, SmartSwitchManager, Mode, ModeManager,
-            ImageGallery, GenerationQueue, JobStatus,
-            WorkflowManager, Workflow, WorkflowMetadata
-        )
         print("✓ All core modules imported successfully")
 
         print("\n2. Testing utils imports...")
-        from utils import pil_to_base64
         print("✓ Utils imported successfully")
 
         print("\n3. Testing comfyui_api import...")
-        from comfyui_api import ComfyUIBridge
         print("✓ ComfyUI API imported successfully")
 
         print("\n4. Testing config import...")
-        import config
         print("✓ Config imported successfully")
 
         return True
@@ -89,7 +81,7 @@ def test_generation_queue():
     print("=" * 60)
 
     try:
-        from core import GenerationQueue, JobStatus
+        from core import GenerationQueue
 
         print("\n1. Initialize GenerationQueue...")
         queue = GenerationQueue()
@@ -127,9 +119,11 @@ def test_image_gallery():
     print("=" * 60)
 
     try:
-        from core import ImageGallery
-        from PIL import Image
         import tempfile
+
+        from PIL import Image
+
+        from core import ImageGallery
 
         # Use temp directory
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -194,7 +188,7 @@ def test_session_stats():
         stats.add_generation(15.5)
         stats.add_generation(12.3)
         stats.add_generation(18.7)
-        print(f"✓ Added 3 generations")
+        print("✓ Added 3 generations")
 
         print("\n3. Get display...")
         display = stats.get_stats_display()
@@ -224,7 +218,7 @@ def test_seed_manager():
         print("\n2. Add seeds...")
         seed_mgr.add_seed(12345)
         seed_mgr.add_seed(67890)
-        print(f"✓ Added seeds")
+        print("✓ Added seeds")
 
         print("\n3. Get seed history...")
         history = seed_mgr.seed_history  # It's a property, not a method
@@ -250,8 +244,9 @@ def test_prompt_history():
     print("=" * 60)
 
     try:
-        from core import PromptHistory
         import tempfile
+
+        from core import PromptHistory
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             temp_file = f.name
@@ -263,7 +258,7 @@ def test_prompt_history():
         print("\n2. Add prompts...")
         history.add_prompt("test prompt 1", {"width": 1024, "height": 1024, "steps": 20})
         history.add_prompt("test prompt 2", {"width": 512, "height": 512, "steps": 15})
-        print(f"✓ Added prompts")
+        print("✓ Added prompts")
 
         print("\n3. Search prompts...")
         results = history.search_prompts("test")

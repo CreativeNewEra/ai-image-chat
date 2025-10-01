@@ -5,11 +5,15 @@ Handles switching between different operational modes (Idle, Chat, Vision, Gener
 and manages VRAM efficiently.
 """
 
-import time
-import requests
 import logging
+import time
 from enum import Enum
+
+import requests
+
 from config import OLLAMA_API, OLLAMA_CHAT_MODEL, OLLAMA_VISION_MODEL
+
+from .exceptions import ModeTransitionError, OllamaConnectionError
 
 # Lazy import for torch (only needed if using CUDA)
 try:
@@ -56,9 +60,7 @@ class ModeManager:
         for model_name in (OLLAMA_CHAT_MODEL, OLLAMA_VISION_MODEL):
             try:
                 response = requests.post(
-                    f"{OLLAMA_API}/generate",
-                    json={"model": model_name, "keep_alive": 0},
-                    timeout=5
+                    f"{OLLAMA_API}/generate", json={"model": model_name, "keep_alive": 0}, timeout=5
                 )
                 if response.status_code == 200:
                     logger.info(f"✓ Ollama model '{model_name}' unloaded")
@@ -67,7 +69,7 @@ class ModeManager:
                         "⚠️ Ollama responded with status %s while unloading '%s': %s",
                         response.status_code,
                         model_name,
-                        response.text
+                        response.text,
                     )
             except requests.RequestException as exc:
                 logger.warning("⚠️ Failed to unload Ollama model '%s': %s", model_name, exc)
@@ -96,18 +98,36 @@ class ModeManager:
                     "model": OLLAMA_CHAT_MODEL,
                     "prompt": "Hi",
                     "stream": False,
-                    "keep_alive": "5m"  # Keep loaded for 5 minutes
+                    "keep_alive": "5m",  # Keep loaded for 5 minutes
                 },
-                timeout=30
+                timeout=30,
             )
             if response.status_code == 200:
                 self.current_mode = Mode.CHAT
                 logger.info("✓ Chat mode ready")
                 return self._get_status_message()
+            else:
+                # Non-200 status - model might not exist or Ollama issue
+                error_msg = f"Ollama returned status {response.status_code}"
+                logger.error(error_msg)
+                raise OllamaConnectionError(
+                    f"Failed to load chat model '{OLLAMA_CHAT_MODEL}': {error_msg}. "
+                    f"Please ensure the model is pulled with 'ollama pull {OLLAMA_CHAT_MODEL}'"
+                )
+        except requests.RequestException as e:
+            # Connection error - Ollama likely not running
+            logger.error(f"Failed to connect to Ollama: {e}")
+            raise OllamaConnectionError(
+                f"Cannot connect to Ollama at {OLLAMA_API}. "
+                f"Please start Ollama with 'ollama serve'"
+            )
+        except OllamaConnectionError:
+            # Re-raise our custom exceptions
+            raise
         except Exception as e:
-            return f"❌ Failed to load Ollama: {str(e)}"
-
-        return "❌ Failed to switch to chat mode"
+            # Unexpected error - wrap in ModeTransitionError
+            logger.exception(f"Unexpected error switching to chat mode: {e}")
+            raise ModeTransitionError(f"Failed to switch to chat mode: {str(e)}")
 
     def switch_to_vision(self):
         """Load Ollama vision model on GPU"""
@@ -126,21 +146,44 @@ class ModeManager:
                     "model": OLLAMA_VISION_MODEL,
                     "prompt": "Hi",
                     "stream": False,
-                    "keep_alive": "5m"  # Keep loaded for 5 minutes
+                    "keep_alive": "5m",  # Keep loaded for 5 minutes
                 },
-                timeout=30
+                timeout=30,
             )
             if response.status_code == 200:
                 self.current_mode = Mode.VISION
                 logger.info("✓ Vision chat mode ready")
                 return self._get_status_message()
+            else:
+                # Non-200 status - model might not exist or Ollama issue
+                error_msg = f"Ollama returned status {response.status_code}"
+                logger.error(error_msg)
+                raise OllamaConnectionError(
+                    f"Failed to load vision model '{OLLAMA_VISION_MODEL}': {error_msg}. "
+                    f"Please ensure the model is pulled with 'ollama pull {OLLAMA_VISION_MODEL}'"
+                )
+        except requests.RequestException as e:
+            # Connection error - Ollama likely not running
+            logger.error(f"Failed to connect to Ollama: {e}")
+            raise OllamaConnectionError(
+                f"Cannot connect to Ollama at {OLLAMA_API}. "
+                f"Please start Ollama with 'ollama serve'"
+            )
+        except OllamaConnectionError:
+            # Re-raise our custom exceptions
+            raise
         except Exception as e:
-            return f"❌ Failed to load Ollama vision model: {str(e)}"
-
-        return "❌ Failed to switch to vision chat mode"
+            # Unexpected error - wrap in ModeTransitionError
+            logger.exception(f"Unexpected error switching to vision mode: {e}")
+            raise ModeTransitionError(f"Failed to switch to vision mode: {str(e)}")
 
     def switch_to_generate(self):
-        """Prepare for generation (unload Ollama, check ComfyUI)"""
+        """
+        Prepare for generation (unload Ollama, check ComfyUI)
+
+        Raises:
+            ComfyUINotAvailableError: If ComfyUI is not running or accessible
+        """
         logger.info("Switching to GENERATE mode...")
 
         # Unload Ollama first
@@ -154,6 +197,9 @@ class ModeManager:
             logger.info("✓ Generate mode ready")
             return self._get_status_message()
         else:
+            # ComfyUI not available - return instructions (backward compatible)
+            # Note: We don't raise an exception here to maintain backward compatibility
+            # The UI can handle this gracefully by showing instructions
             return self._get_comfyui_instructions()
 
     def _get_status_message(self):
@@ -163,8 +209,10 @@ class ModeManager:
 
         # Get live VRAM stats
         vram = self.vram_monitor.get_vram_usage()
-        if vram['available']:
-            vram_display = f"**VRAM:** {vram['used_gb']} / {vram['total_gb']} GB ({vram['percentage']}%)"
+        if vram["available"]:
+            vram_display = (
+                f"**VRAM:** {vram['used_gb']} / {vram['total_gb']} GB ({vram['percentage']}%)"
+            )
         else:
             vram_display = "**VRAM:** Monitoring unavailable"
 
@@ -188,7 +236,7 @@ class ModeManager:
 
     def _get_comfyui_instructions(self):
         """Return instructions for starting ComfyUI"""
-        return f"""⚠️ **ComfyUI Not Running**
+        return """⚠️ **ComfyUI Not Running**
 
 Please start ComfyUI in a terminal:
 

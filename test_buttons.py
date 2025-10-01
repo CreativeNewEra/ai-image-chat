@@ -5,6 +5,7 @@ Minimal button test to debug the issue
 
 import gradio as gr
 
+
 def test_button_1():
     print("=" * 60)
     print("BUTTON 1 CLICKED!")

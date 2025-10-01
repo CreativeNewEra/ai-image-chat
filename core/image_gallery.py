@@ -5,13 +5,12 @@ Manages session image gallery with auto-save functionality.
 Enhanced with filtering, sorting, favorites, and deletion.
 """
 
-import os
 import json
-from datetime import datetime
-from PIL import Image
 import logging
-from typing import List, Dict, Optional
-from config import OUTPUT_DIR, DEFAULT_WIDTH, DEFAULT_HEIGHT, DEFAULT_STEPS
+import os
+from datetime import datetime
+
+from config import DEFAULT_HEIGHT, DEFAULT_STEPS, DEFAULT_WIDTH, OUTPUT_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +19,9 @@ class ImageGallery:
     """Manages image gallery with session storage and disk persistence"""
 
     def __init__(self):
-        self.images = []  # List of {image: PIL, prompt: str, seed: int, settings: dict, timestamp: str, favorite: bool, filepath: str}
+        self.images = (
+            []
+        )  # List of {image: PIL, prompt: str, seed: int, settings: dict, timestamp: str, favorite: bool, filepath: str}
         self.last_seed = None
         self.favorites = set()  # Set of image indices that are favorited
 
@@ -41,7 +42,7 @@ class ImageGallery:
             "width": settings.get("width", DEFAULT_WIDTH),
             "height": settings.get("height", DEFAULT_HEIGHT),
             "steps": settings.get("steps", DEFAULT_STEPS),
-            "timestamp": timestamp
+            "timestamp": timestamp,
         }
 
         # Save image with metadata
@@ -54,25 +55,29 @@ class ImageGallery:
 
         # Save metadata as JSON
         metadata_file = filepath.replace(".png", ".json")
-        with open(metadata_file, 'w') as f:
+        with open(metadata_file, "w") as f:
             json.dump(metadata, f, indent=2)
 
         # Add to session gallery
-        self.images.append({
-            "image": image,
-            "prompt": prompt,
-            "seed": seed,
-            "settings": settings,
-            "timestamp": timestamp,
-            "filepath": filepath,
-            "favorite": False
-        })
+        self.images.append(
+            {
+                "image": image,
+                "prompt": prompt,
+                "seed": seed,
+                "settings": settings,
+                "timestamp": timestamp,
+                "filepath": filepath,
+                "favorite": False,
+            }
+        )
 
         self.last_seed = seed
 
         logger.info(f"✓ Saved: {filename}")
 
-    def get_images(self, filter_text: str = "", sort_by: str = "newest", favorites_only: bool = False):
+    def get_images(
+        self, filter_text: str = "", sort_by: str = "newest", favorites_only: bool = False
+    ):
         """Get list of images for gallery display with filtering and sorting"""
         # Start with all images
         filtered_images = self.images.copy()
@@ -85,8 +90,7 @@ class ImageGallery:
         if filter_text:
             filter_lower = filter_text.lower()
             filtered_images = [
-                img for img in filtered_images
-                if filter_lower in img["prompt"].lower()
+                img for img in filtered_images if filter_lower in img["prompt"].lower()
             ]
 
         # Apply sorting
@@ -100,7 +104,7 @@ class ImageGallery:
             filtered_images = sorted(
                 filtered_images,
                 key=lambda x: x["settings"].get("width", 1024) * x["settings"].get("height", 1024),
-                reverse=True
+                reverse=True,
             )
 
         return [item["image"] for item in filtered_images]
@@ -173,7 +177,7 @@ class ImageGallery:
 
         return False
 
-    def delete_selected(self, indices: List[int]) -> int:
+    def delete_selected(self, indices: list[int]) -> int:
         """Delete multiple images by indices"""
         # Sort indices in reverse order to delete from end to start
         sorted_indices = sorted(set(indices), reverse=True)
@@ -190,14 +194,10 @@ class ImageGallery:
         """Get count of favorited images"""
         return len(self.favorites)
 
-    def get_gallery_stats(self) -> Dict:
+    def get_gallery_stats(self) -> dict:
         """Get gallery statistics"""
         if not self.images:
-            return {
-                "total": 0,
-                "favorites": 0,
-                "total_size_mb": 0
-            }
+            return {"total": 0, "favorites": 0, "total_size_mb": 0}
 
         total_size = 0
         for img_data in self.images:
@@ -208,5 +208,5 @@ class ImageGallery:
         return {
             "total": len(self.images),
             "favorites": len(self.favorites),
-            "total_size_mb": round(total_size / (1024 * 1024), 2)
+            "total_size_mb": round(total_size / (1024 * 1024), 2),
         }

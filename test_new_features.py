@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from core.vram_estimator import VRAMEstimator
 from core.prompt_history import PromptHistory
+from core.vram_estimator import VRAMEstimator
 
 
 @pytest.mark.parametrize(

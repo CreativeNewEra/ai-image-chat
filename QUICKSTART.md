@@ -2,6 +2,16 @@
 
 ## 🏃 Quick Start
 
+### 0. Configuration (First Time Only)
+```bash
+# Copy the example environment file
+cp .env.example .env
+
+# Edit .env to customize paths and settings (optional)
+# The defaults work for the standard setup
+nano .env  # or use your preferred editor
+```
+
 ### 1. Start ComfyUI (Terminal 1)
 ```bash
 ./start_comfy.sh
@@ -66,26 +76,29 @@ pkill -f ollama
 
 ## 🔧 Quick Settings
 
-### In `config.py`:
-
-**Faster generation:**
-```python
-DEFAULT_STEPS = 15
-DEFAULT_WIDTH = 768
-DEFAULT_HEIGHT = 768
-```
-
-**Better quality:**
-```python
-DEFAULT_STEPS = 30
-DEFAULT_WIDTH = 1024
-DEFAULT_HEIGHT = 1024
-```
+### In `.env` file:
 
 **Different chat model:**
-```python
-OLLAMA_CHAT_MODEL = "mistral:7b"  # Faster
+```bash
+OLLAMA_CHAT_MODEL=mistral:7b  # Faster, smaller
 ```
+
+**Custom ComfyUI path:**
+```bash
+COMFYUI_PATH=/path/to/your/ComfyUI
+```
+
+**Different finetune:**
+```bash
+FINETUNE_NAME=your_model.safetensors
+```
+
+**Custom output directory:**
+```bash
+OUTPUT_DIR=/path/to/outputs
+```
+
+**Note:** Generation defaults (steps, width, height) are still configured in `config.py` or via the UI presets.
 
 ---
 

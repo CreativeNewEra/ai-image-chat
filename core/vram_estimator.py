@@ -5,7 +5,6 @@ Estimates VRAM requirements and generates warnings for image generation.
 """
 
 import logging
-from typing import Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -43,12 +42,8 @@ class VRAMEstimator:
 
     @staticmethod
     def get_warnings(
-        width: int,
-        height: int,
-        steps: int,
-        current_vram_used: float = 0,
-        total_vram: float = 16
-    ) -> Tuple[str, str]:
+        width: int, height: int, steps: int, current_vram_used: float = 0, total_vram: float = 16
+    ) -> tuple[str, str]:
         """
         Generate warnings based on estimated VRAM usage
 
@@ -60,48 +55,56 @@ class VRAMEstimator:
         available_vram = total_vram - current_vram_used
 
         warnings = []
-        warning_level = 'none'
+        warning_level = "none"
 
         # Check total VRAM requirement
         if estimated_vram > total_vram:
-            warning_level = 'error'
-            warnings.append(f"⛔ **OUT OF VRAM**: Estimated {estimated_vram}GB exceeds {total_vram}GB total")
+            warning_level = "error"
+            warnings.append(
+                f"⛔ **OUT OF VRAM**: Estimated {estimated_vram}GB exceeds {total_vram}GB total"
+            )
 
             # Suggest lower resolution
             if width > 1024 or height > 1024:
-                warnings.append(f"💡 **Suggestion**: Try 1024x1024 (~8GB) or 768x768 (~4.5GB)")
+                warnings.append("💡 **Suggestion**: Try 1024x1024 (~8GB) or 768x768 (~4.5GB)")
             else:
-                warnings.append(f"💡 **Suggestion**: Try 768x768 (~4.5GB) or 512x512 (~2GB)")
+                warnings.append("💡 **Suggestion**: Try 768x768 (~4.5GB) or 512x512 (~2GB)")
 
         elif estimated_vram > available_vram:
-            warning_level = 'error'
-            warnings.append(f"⚠️ **INSUFFICIENT VRAM**: Need {estimated_vram}GB but only {available_vram:.1f}GB available")
-            warnings.append(f"💡 **Suggestion**: Switch to Idle mode first to free up VRAM")
+            warning_level = "error"
+            warnings.append(
+                f"⚠️ **INSUFFICIENT VRAM**: Need {estimated_vram}GB but only {available_vram:.1f}GB available"
+            )
+            warnings.append("💡 **Suggestion**: Switch to Idle mode first to free up VRAM")
 
         elif estimated_vram > total_vram * 0.9:
-            warning_level = 'warning'
-            warnings.append(f"⚠️ **HIGH VRAM**: Estimated {estimated_vram}GB is {(estimated_vram/total_vram)*100:.0f}% of total")
-            warnings.append(f"💡 This may cause instability. Consider 1024x1024 or lower.")
+            warning_level = "warning"
+            warnings.append(
+                f"⚠️ **HIGH VRAM**: Estimated {estimated_vram}GB is {(estimated_vram/total_vram)*100:.0f}% of total"
+            )
+            warnings.append("💡 This may cause instability. Consider 1024x1024 or lower.")
 
         elif estimated_vram > total_vram * 0.75:
-            warning_level = 'info'
-            warnings.append(f"ℹ️ **Moderate VRAM**: Estimated {estimated_vram}GB ({(estimated_vram/total_vram)*100:.0f}% of total)")
+            warning_level = "info"
+            warnings.append(
+                f"ℹ️ **Moderate VRAM**: Estimated {estimated_vram}GB ({(estimated_vram/total_vram)*100:.0f}% of total)"
+            )
 
         # Check for excessive steps
         if steps > 40:
-            if warning_level == 'none':
-                warning_level = 'info'
+            if warning_level == "none":
+                warning_level = "info"
             warnings.append(f"⏱️ **High step count**: {steps} steps will take significant time")
-            warnings.append(f"💡 FLUX typically converges well by 20-30 steps")
+            warnings.append("💡 FLUX typically converges well by 20-30 steps")
 
         # Check for unusual resolutions
         if width != height and abs(width - height) > 512:
-            if warning_level == 'none':
-                warning_level = 'info'
+            if warning_level == "none":
+                warning_level = "info"
             warnings.append(f"📐 **Unusual aspect ratio**: {width}x{height}")
-            warnings.append(f"💡 Extreme aspect ratios may produce unexpected results")
+            warnings.append("💡 Extreme aspect ratios may produce unexpected results")
 
         if warnings:
             return warning_level, "\n".join(warnings)
         else:
-            return 'none', f"✅ Estimated VRAM: {estimated_vram}GB - Should work fine"
+            return "none", f"✅ Estimated VRAM: {estimated_vram}GB - Should work fine"

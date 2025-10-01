@@ -1,13 +1,31 @@
 # AI Image Chat - Python Dependencies
+#
+# Version Pinning Policy:
+# - All versions are pinned to ensure reproducible builds and prevent breaking changes
+# - Update versions intentionally after testing compatibility
+# - Run `pip install -r requirements.txt` for production installations
+# - For development, use requirements-dev.txt instead
+#
+# Last updated: 2025-10-01
 
-# Core
-gradio>=4.0.0
-requests>=2.31.0
-pillow>=10.0.0
+# Core Web Framework
+gradio==4.44.1
+
+# HTTP Client
+requests==2.32.3
+
+# Image Processing
+pillow==10.4.0
+
+# Environment Configuration
+python-dotenv==1.0.1
+
+# WebSocket for ComfyUI real-time updates
+websocket-client==1.8.0
 
 # PyTorch (if not already installed via conda)
 # Install manually with CUDA support:
 # pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-
-# WebSocket for ComfyUI (if needed for real-time updates)
-websocket-client>=1.6.0
+# Recommended versions:
+# torch==2.4.1
+# torchvision==0.19.1

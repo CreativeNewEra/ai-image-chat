@@ -4,9 +4,8 @@ Session Statistics Module
 Tracks generation performance metrics for the current session.
 """
 
-from datetime import datetime
-from typing import Dict, List
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +20,7 @@ class SessionStats:
     def __init__(self) -> None:
         self.session_start: datetime = datetime.now()
         self.total_images: int = 0
-        self.generation_times: List[float] = []
+        self.generation_times: list[float] = []
         self.total_compute_time: float = 0
 
     def add_generation(self, generation_time: float) -> None:
@@ -35,7 +34,7 @@ class SessionStats:
         self.generation_times.append(generation_time)
         self.total_compute_time += generation_time
 
-    def get_stats(self) -> Dict[str, float]:
+    def get_stats(self) -> dict[str, float]:
         """
         Get formatted statistics.
 
@@ -45,23 +44,23 @@ class SessionStats:
         """
         if self.total_images == 0:
             return {
-                'total_images': 0,
-                'avg_time': 0,
-                'fastest': 0,
-                'slowest': 0,
-                'total_time': 0,
-                'session_duration': 0
+                "total_images": 0,
+                "avg_time": 0,
+                "fastest": 0,
+                "slowest": 0,
+                "total_time": 0,
+                "session_duration": 0,
             }
 
         session_duration = (datetime.now() - self.session_start).total_seconds()
 
         return {
-            'total_images': self.total_images,
-            'avg_time': round(sum(self.generation_times) / len(self.generation_times), 1),
-            'fastest': round(min(self.generation_times), 1),
-            'slowest': round(max(self.generation_times), 1),
-            'total_time': round(self.total_compute_time, 1),
-            'session_duration': round(session_duration / 60, 1)  # in minutes
+            "total_images": self.total_images,
+            "avg_time": round(sum(self.generation_times) / len(self.generation_times), 1),
+            "fastest": round(min(self.generation_times), 1),
+            "slowest": round(max(self.generation_times), 1),
+            "total_time": round(self.total_compute_time, 1),
+            "session_duration": round(session_duration / 60, 1),  # in minutes
         }
 
     def get_stats_display(self) -> str:
@@ -73,7 +72,7 @@ class SessionStats:
         """
         stats = self.get_stats()
 
-        if stats['total_images'] == 0:
+        if stats["total_images"] == 0:
             return "📊 **Session Stats**: No images generated yet"
 
         return f"""📊 **Session Stats**

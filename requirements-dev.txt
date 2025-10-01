@@ -1,0 +1,61 @@
+# AI Image Chat - Development Dependencies
+#
+# This file includes all production dependencies plus development tools
+# Install with: pip install -r requirements-dev.txt
+#
+# Last updated: 2025-10-01
+
+# ============================================================================
+# PRODUCTION DEPENDENCIES
+# ============================================================================
+
+-r requirements.txt
+
+# ============================================================================
+# TESTING FRAMEWORK
+# ============================================================================
+
+# Core testing framework
+pytest==8.3.3
+
+# Code coverage reporting
+pytest-cov==5.0.0
+
+# Mock objects for testing
+pytest-mock==3.14.0
+
+# Asyncio support for pytest
+pytest-asyncio==0.24.0
+
+# ============================================================================
+# CODE QUALITY & FORMATTING
+# ============================================================================
+
+# Python code formatter (PEP 8 compliant)
+black==24.8.0
+
+# Fast Python linter (replaces flake8, pylint, etc.)
+ruff==0.6.8
+
+# Type checking
+mypy==1.11.2
+
+# ============================================================================
+# PRE-COMMIT HOOKS
+# ============================================================================
+
+# Git hook scripts for code quality checks
+pre-commit==3.8.0
+
+# ============================================================================
+# DEVELOPMENT UTILITIES
+# ============================================================================
+
+# Better REPL
+ipython==8.27.0
+
+# Interactive debugger
+ipdb==0.13.13
+
+# Dependency visualization
+pipdeptree==2.23.4

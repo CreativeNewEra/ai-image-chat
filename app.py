@@ -3,33 +3,31 @@ AI Image Chat - Main Application
 Phase 2: Text Chat + Vision Chat + ComfyUI Generation with Mode Switching
 """
 
+import logging
+import random
+import time
+from datetime import datetime
+
 import gradio as gr
 import requests
-import torch
-import time
-import re
-import random
-import logging
-from datetime import datetime
-from PIL import Image
+
+from comfyui_api import comfy
 
 # Local imports
 from config import *
-from comfyui_api import comfy
 from core import (
-    VRAMMonitor,
-    SessionStats,
-    VRAMEstimator,
-    SeedManager,
-    PromptHistory,
-    SmartSwitchManager,
+    GenerationQueue,
+    ImageGallery,
+    JobStatus,
     Mode,
     ModeManager,
-    ImageGallery,
-    GenerationQueue,
-    JobStatus,
+    PromptHistory,
+    SeedManager,
+    SessionStats,
+    SmartSwitchManager,
+    VRAMEstimator,
+    VRAMMonitor,
     WorkflowManager,
-    WorkflowMetadata
 )
 from utils import pil_to_base64
 
@@ -55,7 +53,9 @@ workflow_manager = WorkflowManager()
 if not workflow_manager.get_current_workflow() and workflow_manager.get_workflow_count() > 0:
     first_workflow = list(workflow_manager.workflows.keys())[0]
     workflow_manager.set_current_workflow(first_workflow)
-    logger.info(f"Auto-selected first workflow: {workflow_manager.get_current_workflow().metadata.name}")
+    logger.info(
+        f"Auto-selected first workflow: {workflow_manager.get_current_workflow().metadata.name}"
+    )
 
 # Mode manager needs vram_monitor and comfy
 mode_manager = ModeManager(vram_monitor, comfy)
@@ -64,16 +64,18 @@ mode_manager = ModeManager(vram_monitor, comfy)
 # OLLAMA CHAT
 # ============================================================================
 
+
 def get_available_models():
     """Get list of Ollama models"""
     try:
         response = requests.get(f"{OLLAMA_API.replace('/api', '')}/api/tags")
         if response.status_code == 200:
-            models = response.json().get('models', [])
-            return [model['name'] for model in models]
+            models = response.json().get("models", [])
+            return [model["name"] for model in models]
     except:
         pass
     return [OLLAMA_CHAT_MODEL, "mistral:7b", "mistral-small3.2:latest"]
+
 
 def chat_with_ollama(message, history, model_choice, current_prompt):
     """Send message to Ollama and get response"""
@@ -104,18 +106,19 @@ def chat_with_ollama(message, history, model_choice, current_prompt):
                 "model": model_choice,
                 "messages": [{"role": "system", "content": SYSTEM_PROMPT + context}] + messages,
                 "stream": False,
-                "keep_alive": "5m"
+                "keep_alive": "5m",
             },
-            timeout=60
+            timeout=60,
         )
 
         if response.status_code == 200:
-            return response.json()['message']['content']
+            return response.json()["message"]["content"]
         else:
             return f"Error: {response.status_code}"
 
     except Exception as e:
         return f"Error: {str(e)}"
+
 
 def vision_chat_with_ollama(message, history, current_image, current_prompt):
     """Send message with image to Ollama vision model and get response"""
@@ -140,11 +143,7 @@ def vision_chat_with_ollama(message, history, current_image, current_prompt):
                 messages.append({"role": "assistant", "content": h[1]})
 
         # Add current message with image
-        messages.append({
-            "role": "user",
-            "content": message,
-            "images": [image_base64]
-        })
+        messages.append({"role": "user", "content": message, "images": [image_base64]})
 
         # Add context about current prompt
         context = ""
@@ -156,48 +155,54 @@ def vision_chat_with_ollama(message, history, current_image, current_prompt):
             f"{OLLAMA_API}/chat",
             json={
                 "model": OLLAMA_VISION_MODEL,
-                "messages": [{"role": "system", "content": VISION_SYSTEM_PROMPT + context}] + messages,
+                "messages": [{"role": "system", "content": VISION_SYSTEM_PROMPT + context}]
+                + messages,
                 "stream": False,
-                "keep_alive": "5m"
+                "keep_alive": "5m",
             },
-            timeout=120  # Vision models may take longer
+            timeout=120,  # Vision models may take longer
         )
 
         if response.status_code == 200:
-            return response.json()['message']['content']
+            return response.json()["message"]["content"]
         else:
             return f"Error: {response.status_code}"
 
     except Exception as e:
         return f"Error: {str(e)}"
 
+
 # ============================================================================
 # IMAGE GENERATION
 # ============================================================================
 
+
 def check_vram_warnings(steps, width, height):
     """Check VRAM warnings and return display markdown"""
     vram_info = vram_monitor.get_vram_usage()
-    current_used = vram_info['used_gb']
-    total_vram = vram_info['total_gb']
+    current_used = vram_info["used_gb"]
+    total_vram = vram_info["total_gb"]
 
     warning_level, warning_msg = vram_estimator.get_warnings(
         width, height, steps, current_used, total_vram
     )
 
     # Return tuple: (markdown_text, visible_boolean)
-    if warning_level == 'none':
+    if warning_level == "none":
         return "", False
-    elif warning_level == 'info':
+    elif warning_level == "info":
         return f"ℹ️ {warning_msg}", True
-    elif warning_level == 'warning':
+    elif warning_level == "warning":
         return f"⚠️ {warning_msg}", True
-    elif warning_level == 'error':
+    elif warning_level == "error":
         return f"🚨 {warning_msg}", True
     else:
         return "", False
 
-def generate_image(prompt_text, steps, width, height, seed_value, denoise=1.0, input_image_path=None):
+
+def generate_image(
+    prompt_text, steps, width, height, seed_value, denoise=1.0, input_image_path=None
+):
     """Generate image via ComfyUI (text2img or img2img)
 
     Args:
@@ -218,14 +223,24 @@ def generate_image(prompt_text, steps, width, height, seed_value, denoise=1.0, i
 
     # Validate prompt
     if not prompt_text or len(prompt_text) < MIN_PROMPT_LENGTH:
-        return None, f"⚠️ Please provide a prompt (at least {MIN_PROMPT_LENGTH} characters)", None, None
+        return (
+            None,
+            f"⚠️ Please provide a prompt (at least {MIN_PROMPT_LENGTH} characters)",
+            None,
+            None,
+        )
 
     # Validate width/height only for text2img
     if not input_image_path:
         if not (MIN_WIDTH <= width <= MAX_WIDTH):
             return None, f"❌ Width must be between {MIN_WIDTH} and {MAX_WIDTH} pixels", None, None
         if not (MIN_HEIGHT <= height <= MAX_HEIGHT):
-            return None, f"❌ Height must be between {MIN_HEIGHT} and {MAX_HEIGHT} pixels", None, None
+            return (
+                None,
+                f"❌ Height must be between {MIN_HEIGHT} and {MAX_HEIGHT} pixels",
+                None,
+                None,
+            )
 
     # Validate steps
     if not (MIN_STEPS <= steps <= MAX_STEPS):
@@ -272,7 +287,7 @@ def generate_image(prompt_text, steps, width, height, seed_value, denoise=1.0, i
         height=height,
         seed=seed,
         denoise=denoise,
-        input_image_path=input_image_path
+        input_image_path=input_image_path,
     )
 
     # Calculate generation time
@@ -280,11 +295,7 @@ def generate_image(prompt_text, steps, width, height, seed_value, denoise=1.0, i
 
     # If generation succeeded, save to gallery and record stats
     if image is not None and actual_seed is not None:
-        settings = {
-            "width": width,
-            "height": height,
-            "steps": steps
-        }
+        settings = {"width": width, "height": height, "steps": steps}
 
         gallery.add_image(image, prompt_text, actual_seed, settings)
 
@@ -299,7 +310,9 @@ def generate_image(prompt_text, steps, width, height, seed_value, denoise=1.0, i
 
         # Return seed info and time in status
         lock_status = " 🔒 LOCKED" if seed_manager.is_locked else ""
-        status = f"{status}\n\nSeed: {actual_seed}{lock_status} | Time: {round(generation_time, 1)}s"
+        status = (
+            f"{status}\n\nSeed: {actual_seed}{lock_status} | Time: {round(generation_time, 1)}s"
+        )
 
     # Return stats display as 4th value
     stats_display = session_stats.get_stats_display()
@@ -311,10 +324,14 @@ def generate_image(prompt_text, steps, width, height, seed_value, denoise=1.0, i
 # BATCH GENERATION QUEUE
 # ============================================================================
 
+
 def add_to_queue(prompt_text, steps, width, height, seed_value):
     """Add current settings to generation queue"""
     if not prompt_text or len(prompt_text) < MIN_PROMPT_LENGTH:
-        return f"⚠️ Please provide a prompt (at least {MIN_PROMPT_LENGTH} characters)", gen_queue.get_queue_display()
+        return (
+            f"⚠️ Please provide a prompt (at least {MIN_PROMPT_LENGTH} characters)",
+            gen_queue.get_queue_display(),
+        )
 
     # Parse seed
     seed = -1  # -1 means random
@@ -333,7 +350,10 @@ def add_to_queue(prompt_text, steps, width, height, seed_value):
 def add_batch_variations(prompt_text, steps, width, height, seed_value, count=4):
     """Add batch of seed variations to queue"""
     if not prompt_text or len(prompt_text) < MIN_PROMPT_LENGTH:
-        return f"⚠️ Please provide a prompt (at least {MIN_PROMPT_LENGTH} characters)", gen_queue.get_queue_display()
+        return (
+            f"⚠️ Please provide a prompt (at least {MIN_PROMPT_LENGTH} characters)",
+            gen_queue.get_queue_display(),
+        )
 
     # Parse seed
     seed = None
@@ -354,13 +374,21 @@ def add_batch_variations(prompt_text, steps, width, height, seed_value, count=4)
     job_ids = gen_queue.add_batch_variations(prompt_text, width, height, steps, seed, count)
     logger.info(f"Added {count} variation jobs to queue")
 
-    return f"✅ Added {count} seed variations to queue (seed {seed} +1, +2, +3...)", gen_queue.get_queue_display()
+    return (
+        f"✅ Added {count} seed variations to queue (seed {seed} +1, +2, +3...)",
+        gen_queue.get_queue_display(),
+    )
 
 
 def process_queue():
     """Process all jobs in the queue"""
     if mode_manager.get_mode() != Mode.GENERATE:
-        return None, "⚠️ Please switch to Generation Mode first!", gen_queue.get_queue_display(), None
+        return (
+            None,
+            "⚠️ Please switch to Generation Mode first!",
+            gen_queue.get_queue_display(),
+            None,
+        )
 
     next_job = gen_queue.get_next_job()
     if not next_job:
@@ -382,7 +410,7 @@ def process_queue():
         steps=next_job.steps,
         width=next_job.width,
         height=next_job.height,
-        seed=next_job.seed if next_job.seed != -1 else None
+        seed=next_job.seed if next_job.seed != -1 else None,
     )
 
     generation_time = time.time() - start_time
@@ -397,11 +425,7 @@ def process_queue():
         next_job.result_seed = actual_seed
 
         # Save to gallery
-        settings = {
-            "width": next_job.width,
-            "height": next_job.height,
-            "steps": next_job.steps
-        }
+        settings = {"width": next_job.width, "height": next_job.height, "steps": next_job.steps}
         gallery.add_image(image, next_job.prompt, actual_seed, settings)
 
         # Record stats
@@ -438,9 +462,10 @@ def cancel_all_queue():
 # GRADIO INTERFACE
 # ============================================================================
 
+
 def create_app():
     """Create Gradio UI"""
-    
+
     # JavaScript for toast notifications and keyboard shortcuts
     custom_js = """
     // Toast Notification System
@@ -812,23 +837,25 @@ def create_app():
             0% { transform: translateX(-100%); }
             100% { transform: translateX(400%); }
         }
-        """
+        """,
     ) as app:
-        
+
         # Header
         with gr.Row():
             with gr.Column(scale=4):
-                gr.Markdown("""
+                gr.Markdown(
+                    """
                 # 🎨 AI Image Chat
                 **Smart workflow for AI-assisted image generation**
-                """)
+                """
+                )
             with gr.Column(scale=1):
                 shortcuts_btn = gr.Button("⌨️ Shortcuts", size="sm")
 
         # State
         current_prompt_state = gr.State("")
         current_image_state = gr.State(None)
-        
+
         # ====================================================================
         # MODE SELECTOR & STATUS
         # ====================================================================
@@ -838,22 +865,16 @@ def create_app():
                 gr.Markdown("### 🎛️ Mode Control")
 
                 mode_radio = gr.Radio(
-                    choices=[
-                        "🔵 Idle",
-                        "💬 Text Chat",
-                        "👁️ Vision Chat",
-                        "🎨 Generate"
-                    ],
+                    choices=["🔵 Idle", "💬 Text Chat", "👁️ Vision Chat", "🎨 Generate"],
                     value="🔵 Idle",
                     label="",
                     elem_classes=["mode-radio-group"],
-                    interactive=True
+                    interactive=True,
                 )
 
                 # Status and VRAM inline
                 mode_status = gr.Markdown(
-                    value=mode_manager._get_status_message(),
-                    elem_classes=["vram-display"]
+                    value=mode_manager._get_status_message(), elem_classes=["vram-display"]
                 )
 
                 with gr.Row():
@@ -862,12 +883,13 @@ def create_app():
                         value=True,
                         label="💡 Smart Suggestions",
                         info="Auto-suggest next steps",
-                        scale=2
+                        scale=2,
                     )
 
         # Keyboard shortcuts help (collapsible)
         with gr.Accordion("⌨️ Keyboard Shortcuts", open=False, visible=False) as shortcuts_help:
-            gr.Markdown("""
+            gr.Markdown(
+                """
 ### Mode Switching
 - `Alt+I` - Switch to Idle mode
 - `Alt+C` - Switch to Text Chat mode
@@ -889,25 +911,26 @@ def create_app():
 
 ### Help
 - `?` or `Shift+/` - Toggle this help panel
-            """, elem_classes=["shortcuts-modal"])
+            """,
+                elem_classes=["shortcuts-modal"],
+            )
 
         # Smart mode suggestion display
-        smart_suggestion = gr.Markdown(
-            value="",
-            visible=False,
-            elem_classes=["smart-suggestion"]
-        )
+        smart_suggestion = gr.Markdown(value="", visible=False, elem_classes=["smart-suggestion"])
 
         gr.Markdown("---")
-        
+
         # ====================================================================
         # MAIN INTERFACE
         # ====================================================================
-        
+
         with gr.Row():
             # LEFT COLUMN - Chat Interface
             with gr.Column(scale=2):
-                gr.Markdown('<div class="section-header">💬 AI Chat Assistant</div>', elem_classes=["section-card"])
+                gr.Markdown(
+                    '<div class="section-header">💬 AI Chat Assistant</div>',
+                    elem_classes=["section-card"],
+                )
 
                 with gr.Tabs() as chat_tabs:
                     # Text Chat Tab
@@ -920,28 +943,25 @@ def create_app():
                                 value=OLLAMA_CHAT_MODEL,
                                 label="Chat Model",
                                 interactive=True,
-                                scale=3
+                                scale=3,
                             )
                             refresh_models_btn = gr.Button("🔄", size="sm", scale=1)
 
                         chatbot = gr.Chatbot(
-                            height=350,
-                            label="Chat History",
-                            show_copy_button=True,
-                            type="tuples"
+                            height=350, label="Chat History", show_copy_button=True, type="tuples"
                         )
 
                         with gr.Row():
                             msg = gr.Textbox(
-                                placeholder="Describe your image idea...",
-                                label="Message",
-                                scale=4
+                                placeholder="Describe your image idea...", label="Message", scale=4
                             )
                             send_btn = gr.Button("Send", scale=1, variant="primary")
 
                         clear_chat_btn = gr.Button("🗑️ Clear Chat", size="sm")
 
-                        gr.Markdown("**Tips:** Be specific about style, mood, lighting, composition")
+                        gr.Markdown(
+                            "**Tips:** Be specific about style, mood, lighting, composition"
+                        )
 
                     # Vision Chat Tab
                     with gr.Tab("👁️ Vision Chat"):
@@ -951,7 +971,7 @@ def create_app():
                             height=350,
                             label="Vision Chat History",
                             show_copy_button=True,
-                            type="tuples"
+                            type="tuples",
                         )
 
                         # Image preview in vision chat
@@ -959,28 +979,35 @@ def create_app():
                             label="Current Image Being Discussed",
                             type="pil",
                             interactive=False,
-                            height=200
+                            height=200,
                         )
 
                         with gr.Row():
                             vision_msg = gr.Textbox(
                                 placeholder="Ask about the image or request changes...",
                                 label="Message",
-                                scale=4
+                                scale=4,
                             )
                             vision_send_btn = gr.Button("Send", scale=1, variant="primary")
 
                         clear_vision_btn = gr.Button("🗑️ Clear Vision Chat", size="sm")
 
-                        gr.Markdown("**Tips:** 'Make the sky more dramatic', 'Change colors to warmer tones', 'Add more detail to the foreground'")
-            
+                        gr.Markdown(
+                            "**Tips:** 'Make the sky more dramatic', 'Change colors to warmer tones', 'Add more detail to the foreground'"
+                        )
+
             # RIGHT COLUMN - Prompt & Generation
             with gr.Column(scale=2):
-                gr.Markdown('<div class="section-header">🎨 Image Generation</div>', elem_classes=["section-card"])
+                gr.Markdown(
+                    '<div class="section-header">🎨 Image Generation</div>',
+                    elem_classes=["section-card"],
+                )
 
                 # Quick Actions Toolbar
                 with gr.Row():
-                    quick_generate_btn = gr.Button("⚡ Quick Generate", size="sm", variant="primary")
+                    quick_generate_btn = gr.Button(
+                        "⚡ Quick Generate", size="sm", variant="primary"
+                    )
                     quick_copy_btn = gr.Button("📋 Copy", size="sm")
                     quick_clear_btn = gr.Button("🗑️ Clear", size="sm")
                     quick_extract_btn = gr.Button("📝 Extract", size="sm")
@@ -990,9 +1017,9 @@ def create_app():
                     label="Current Prompt",
                     placeholder="Prompt will appear here after chatting...",
                     lines=6,
-                    interactive=True
+                    interactive=True,
                 )
-                
+
                 with gr.Row():
                     extract_prompt_btn = gr.Button("📝 Extract from Chat", size="sm")
                     copy_prompt_btn = gr.Button("📋 Copy Prompt", size="sm")
@@ -1002,9 +1029,7 @@ def create_app():
                 with gr.Accordion("📚 Prompt History", open=False):
                     with gr.Row():
                         prompt_search = gr.Textbox(
-                            placeholder="Search prompts...",
-                            label="Search",
-                            scale=3
+                            placeholder="Search prompts...", label="Search", scale=3
                         )
                         search_btn = gr.Button("🔍 Search", size="sm", scale=1)
 
@@ -1013,7 +1038,7 @@ def create_app():
                         choices=prompt_history.get_dropdown_choices(),
                         value=None,
                         interactive=True,
-                        allow_custom_value=False
+                        allow_custom_value=False,
                     )
 
                     with gr.Row():
@@ -1023,16 +1048,11 @@ def create_app():
                     with gr.Row():
                         export_prompts_btn = gr.Button("💾 Export History", size="sm")
                         import_file = gr.File(
-                            label="Import History",
-                            file_types=[".json"],
-                            type="filepath"
+                            label="Import History", file_types=[".json"], type="filepath"
                         )
 
                     history_status = gr.Textbox(
-                        label="Status",
-                        value="",
-                        interactive=False,
-                        visible=False
+                        label="Status", value="", interactive=False, visible=False
                     )
 
                 # Generation Presets
@@ -1052,9 +1072,13 @@ def create_app():
                         workflow_dropdown = gr.Dropdown(
                             label="Workflow",
                             choices=[wf["name"] for wf in workflow_manager.get_workflows_list()],
-                            value=workflow_manager.get_current_workflow().metadata.name if workflow_manager.get_current_workflow() else None,
+                            value=(
+                                workflow_manager.get_current_workflow().metadata.name
+                                if workflow_manager.get_current_workflow()
+                                else None
+                            ),
                             interactive=True,
-                            scale=3
+                            scale=3,
                         )
                         workflow_refresh_btn = gr.Button("🔄 Refresh", size="sm", scale=1)
 
@@ -1063,18 +1087,14 @@ def create_app():
                             label="Filter by Category",
                             choices=["All"] + workflow_manager.get_all_categories(),
                             value="All",
-                            interactive=True
+                            interactive=True,
                         )
 
-                    workflow_info = gr.Markdown(
-                        value="Loading workflow info..."
-                    )
+                    workflow_info = gr.Markdown(value="Loading workflow info...")
 
                     with gr.Row():
                         workflow_upload_file = gr.File(
-                            label="Upload Workflow JSON",
-                            file_types=[".json"],
-                            type="filepath"
+                            label="Upload Workflow JSON", file_types=[".json"], type="filepath"
                         )
 
                     with gr.Row():
@@ -1085,18 +1105,19 @@ def create_app():
                 with gr.Accordion("⚙️ Generation Settings", open=False):
                     with gr.Row():
                         steps_slider = gr.Slider(
-                            minimum=4, maximum=50, value=DEFAULT_STEPS, step=1,
-                            label="Steps (20 recommended for Krea)"
+                            minimum=4,
+                            maximum=50,
+                            value=DEFAULT_STEPS,
+                            step=1,
+                            label="Steps (20 recommended for Krea)",
                         )
 
                     with gr.Row():
                         width_slider = gr.Slider(
-                            minimum=512, maximum=2048, value=DEFAULT_WIDTH, step=64,
-                            label="Width"
+                            minimum=512, maximum=2048, value=DEFAULT_WIDTH, step=64, label="Width"
                         )
                         height_slider = gr.Slider(
-                            minimum=512, maximum=2048, value=DEFAULT_HEIGHT, step=64,
-                            label="Height"
+                            minimum=512, maximum=2048, value=DEFAULT_HEIGHT, step=64, label="Height"
                         )
 
                     # Seed Management Section
@@ -1107,13 +1128,10 @@ def create_app():
                             label="Seed (leave empty for random)",
                             placeholder="Random seed",
                             value="",
-                            scale=3
+                            scale=3,
                         )
                         seed_lock_checkbox = gr.Checkbox(
-                            label="🔒 Lock",
-                            value=False,
-                            info="Keep seed",
-                            scale=1
+                            label="🔒 Lock", value=False, info="Keep seed", scale=1
                         )
 
                     with gr.Row():
@@ -1135,17 +1153,19 @@ def create_app():
                             choices=[],
                             value=None,
                             interactive=True,
-                            allow_custom_value=True
+                            allow_custom_value=True,
                         )
 
                 # Img2Img Settings
                 with gr.Accordion("🖼️ Img2Img Settings (Optional)", open=False):
-                    gr.Markdown("Upload an image to modify it instead of generating from scratch. Workflow must support img2img (LoadImage + VAEEncode).")
+                    gr.Markdown(
+                        "Upload an image to modify it instead of generating from scratch. Workflow must support img2img (LoadImage + VAEEncode)."
+                    )
 
                     input_image = gr.Image(
                         label="Input Image (leave empty for text2img)",
                         type="filepath",
-                        interactive=True
+                        interactive=True,
                     )
 
                     denoise_slider = gr.Slider(
@@ -1154,7 +1174,7 @@ def create_app():
                         value=0.75,
                         step=0.05,
                         label="Denoise Strength",
-                        info="0.0 = no change, 1.0 = complete regeneration"
+                        info="0.0 = no change, 1.0 = complete regeneration",
                     )
 
                 # Generate Button
@@ -1162,42 +1182,30 @@ def create_app():
                     "🎨 Generate Image",
                     variant="primary",
                     size="lg",
-                    elem_classes=["primary-action"]
+                    elem_classes=["primary-action"],
                 )
 
                 # VRAM Warning Display
-                vram_warning_display = gr.Markdown(
-                    value="",
-                    visible=False
-                )
+                vram_warning_display = gr.Markdown(value="", visible=False)
 
                 # Progress Bar
                 generation_progress = gr.HTML(
-                    value="",
-                    visible=False,
-                    elem_classes=["progress-container"]
+                    value="", visible=False, elem_classes=["progress-container"]
                 )
 
                 # Status
                 generation_status = gr.Textbox(
-                    label="Status",
-                    value="Ready when you are!",
-                    interactive=False
+                    label="Status", value="Ready when you are!", interactive=False
                 )
-                
+
                 # Image Display
                 generated_image = gr.Image(
-                    label="Generated Image",
-                    type="pil",
-                    interactive=False,
-                    height=400
+                    label="Generated Image", type="pil", interactive=False, height=400
                 )
 
                 # Session Stats Display
                 with gr.Accordion("📊 Session Statistics", open=False):
-                    stats_display = gr.Markdown(
-                        value=session_stats.get_stats_display()
-                    )
+                    stats_display = gr.Markdown(value=session_stats.get_stats_display())
 
                 # Batch Queue Section
                 with gr.Accordion("🔄 Batch Generation Queue", open=False):
@@ -1205,21 +1213,17 @@ def create_app():
 
                     with gr.Row():
                         add_queue_btn = gr.Button("➕ Add to Queue", variant="secondary")
-                        batch_variations_btn = gr.Button("🎲 Add 4 Seed Variations", variant="secondary")
+                        batch_variations_btn = gr.Button(
+                            "🎲 Add 4 Seed Variations", variant="secondary"
+                        )
 
                     with gr.Row():
                         variation_count = gr.Slider(
-                            minimum=2,
-                            maximum=10,
-                            value=4,
-                            step=1,
-                            label="Variation Count"
+                            minimum=2, maximum=10, value=4, step=1, label="Variation Count"
                         )
 
                     queue_status = gr.Textbox(
-                        label="Queue Status",
-                        value="Queue is empty",
-                        interactive=False
+                        label="Queue Status", value="Queue is empty", interactive=False
                     )
 
                     with gr.Row():
@@ -1237,21 +1241,16 @@ def create_app():
         with gr.Row(elem_classes=["gallery-controls"]):
             with gr.Column(scale=2):
                 gallery_filter = gr.Textbox(
-                    label="🔍 Filter Images",
-                    placeholder="Search by prompt keywords...",
-                    value=""
+                    label="🔍 Filter Images", placeholder="Search by prompt keywords...", value=""
                 )
             with gr.Column(scale=1):
                 gallery_sort = gr.Dropdown(
                     label="📊 Sort By",
                     choices=["newest", "oldest", "seed", "resolution"],
-                    value="newest"
+                    value="newest",
                 )
             with gr.Column(scale=1):
-                favorites_only_check = gr.Checkbox(
-                    label="⭐ Favorites Only",
-                    value=False
-                )
+                favorites_only_check = gr.Checkbox(label="⭐ Favorites Only", value=False)
 
         with gr.Row():
             refresh_gallery_btn = gr.Button("🔄 Refresh Gallery")
@@ -1265,14 +1264,14 @@ def create_app():
                 columns=4,
                 rows=2,
                 height="auto",
-                object_fit="contain"
+                object_fit="contain",
             )
 
         with gr.Row():
             gallery_info = gr.Textbox(
                 label="Gallery Info",
                 value="No images generated yet this session",
-                interactive=False
+                interactive=False,
             )
 
         # ====================================================================
@@ -1303,19 +1302,19 @@ def create_app():
                         return (
                             gr.update(value=workflow_name),
                             get_workflow_info_display(),
-                            f"✅ Switched to: {workflow_name}"
+                            f"✅ Switched to: {workflow_name}",
                         )
                     else:
                         return (
                             gr.update(),
                             get_workflow_info_display(),
-                            f"❌ Failed to switch workflow"
+                            "❌ Failed to switch workflow",
                         )
 
             return (
                 gr.update(),
                 get_workflow_info_display(),
-                f"⚠️ Workflow not found: {workflow_name}"
+                f"⚠️ Workflow not found: {workflow_name}",
             )
 
         def refresh_workflows(category_filter):
@@ -1338,7 +1337,7 @@ def create_app():
             return (
                 gr.update(choices=choices, value=current_name),
                 get_workflow_info_display(),
-                f"✅ Refreshed: {len(workflows)} workflows"
+                f"✅ Refreshed: {len(workflows)} workflows",
             )
 
         def filter_workflows_by_category(category):
@@ -1365,15 +1364,11 @@ def create_app():
                 workflows = workflow_manager.get_workflows_list()
                 return (
                     get_workflow_info_display(),
-                    f"✅ Workflow imported successfully!",
-                    gr.update(choices=[wf["name"] for wf in workflows])
+                    "✅ Workflow imported successfully!",
+                    gr.update(choices=[wf["name"] for wf in workflows]),
                 )
             else:
-                return (
-                    get_workflow_info_display(),
-                    f"❌ Failed to import workflow",
-                    gr.update()
-                )
+                return (get_workflow_info_display(), "❌ Failed to import workflow", gr.update())
 
         def export_current_workflow():
             """Export current workflow"""
@@ -1386,7 +1381,7 @@ def create_app():
             if success:
                 return f"✅ Exported to: {export_path}"
             else:
-                return f"❌ Failed to export workflow"
+                return "❌ Failed to export workflow"
 
         # Gallery helper functions
         def update_gallery_display(filter_text="", sort_by="newest", favorites_only=False):
@@ -1431,22 +1426,18 @@ def create_app():
             return status, gr.update(value="", visible=False)
 
         # Wire up mode radio button
-        mode_radio.change(
-            handle_mode_change,
-            [mode_radio],
-            [mode_status, smart_suggestion]
-        )
+        mode_radio.change(handle_mode_change, [mode_radio], [mode_status, smart_suggestion])
 
         check_status_btn.click(
             lambda: (mode_manager._get_status_message(), gr.update(value="", visible=False)),
             None,
-            [mode_status, smart_suggestion]
+            [mode_status, smart_suggestion],
         )
-        
+
         # Chat functions
         def user_message(message, history):
             return "", history + [[message, None]]
-        
+
         def bot_message(history, model, current_prompt):
             if not history or not history[-1][0]:
                 return history, current_prompt, "", False
@@ -1462,11 +1453,12 @@ def create_app():
                 # If response looks like a prompt (has quotes or is descriptive)
                 if '"' in response:
                     import re
+
                     matches = re.findall(r'"([^"]*)"', response)
                     if matches and len(matches[-1]) > 30:
                         new_prompt = matches[-1]
                         prompt_extracted = True
-                elif len(response) > 50 and response.count(',') > 2:
+                elif len(response) > 50 and response.count(",") > 2:
                     # Looks like a detailed prompt
                     new_prompt = response
                     prompt_extracted = True
@@ -1474,35 +1466,29 @@ def create_app():
             # Check for smart switch suggestion
             suggestion_update = gr.update(value="", visible=False)
             if prompt_extracted:
-                suggested = smart_switch.should_suggest_switch("prompt_extracted", mode_manager.get_mode())
+                suggested = smart_switch.should_suggest_switch(
+                    "prompt_extracted", mode_manager.get_mode()
+                )
                 if suggested:
                     suggestion_msg = smart_switch.get_suggestion_message(suggested)
                     suggestion_update = gr.update(value=suggestion_msg, visible=True)
 
             return history, new_prompt, suggestion_update
-        
-        # Wire up chat
-        msg.submit(
-            user_message, [msg, chatbot], [msg, chatbot]
-        ).then(
-            bot_message, [chatbot, model_dropdown, current_prompt_state],
-            [chatbot, current_prompt_state, smart_suggestion]
-        ).then(
-            lambda x: x, [current_prompt_state], [prompt_display]
-        )
 
-        send_btn.click(
-            user_message, [msg, chatbot], [msg, chatbot]
-        ).then(
-            bot_message, [chatbot, model_dropdown, current_prompt_state],
-            [chatbot, current_prompt_state, smart_suggestion]
-        ).then(
-            lambda x: x, [current_prompt_state], [prompt_display]
-        )
-        
-        clear_chat_btn.click(
-            lambda: ([], ""), None, [chatbot, current_prompt_state]
-        ).then(
+        # Wire up chat
+        msg.submit(user_message, [msg, chatbot], [msg, chatbot]).then(
+            bot_message,
+            [chatbot, model_dropdown, current_prompt_state],
+            [chatbot, current_prompt_state, smart_suggestion],
+        ).then(lambda x: x, [current_prompt_state], [prompt_display])
+
+        send_btn.click(user_message, [msg, chatbot], [msg, chatbot]).then(
+            bot_message,
+            [chatbot, model_dropdown, current_prompt_state],
+            [chatbot, current_prompt_state, smart_suggestion],
+        ).then(lambda x: x, [current_prompt_state], [prompt_display])
+
+        clear_chat_btn.click(lambda: ([], ""), None, [chatbot, current_prompt_state]).then(
             lambda: "", None, prompt_display
         )
 
@@ -1524,10 +1510,11 @@ def create_app():
                 # If response looks like a prompt (has quotes or is descriptive)
                 if '"' in response:
                     import re
+
                     matches = re.findall(r'"([^"]*)"', response)
                     if matches and len(matches[-1]) > 30:
                         new_prompt = matches[-1]
-                elif len(response) > 50 and response.count(',') > 2:
+                elif len(response) > 50 and response.count(",") > 2:
                     # Looks like a detailed prompt
                     new_prompt = response
 
@@ -1537,8 +1524,9 @@ def create_app():
         vision_msg.submit(
             vision_user_message, [vision_msg, vision_chatbot], [vision_msg, vision_chatbot]
         ).then(
-            vision_bot_message, [vision_chatbot, current_image_state, current_prompt_state],
-            [vision_chatbot, current_prompt_state]
+            vision_bot_message,
+            [vision_chatbot, current_image_state, current_prompt_state],
+            [vision_chatbot, current_prompt_state],
         ).then(
             lambda x: x, [current_prompt_state], [prompt_display]
         )
@@ -1546,50 +1534,43 @@ def create_app():
         vision_send_btn.click(
             vision_user_message, [vision_msg, vision_chatbot], [vision_msg, vision_chatbot]
         ).then(
-            vision_bot_message, [vision_chatbot, current_image_state, current_prompt_state],
-            [vision_chatbot, current_prompt_state]
+            vision_bot_message,
+            [vision_chatbot, current_image_state, current_prompt_state],
+            [vision_chatbot, current_prompt_state],
         ).then(
             lambda x: x, [current_prompt_state], [prompt_display]
         )
 
-        clear_vision_btn.click(
-            lambda: [], None, [vision_chatbot]
-        )
+        clear_vision_btn.click(lambda: [], None, [vision_chatbot])
 
         # Update vision image preview when current image changes
-        current_image_state.change(
-            lambda x: x, [current_image_state], [vision_image_preview]
-        )
+        current_image_state.change(lambda x: x, [current_image_state], [vision_image_preview])
 
         # Prompt management
-        prompt_display.change(
-            lambda x: x, [prompt_display], [current_prompt_state]
-        )
-        
+        prompt_display.change(lambda x: x, [prompt_display], [current_prompt_state])
+
         def extract_from_chat(history):
             if not history:
                 return "No chat history to extract from!"
-            
+
             # Get last assistant message
             for h in reversed(history):
                 if h[1] and len(h[1]) > 30:
                     return h[1]
-            
+
             return "No suitable prompt found in chat history"
-        
-        extract_prompt_btn.click(
-            extract_from_chat, [chatbot], [prompt_display]
-        )
+
+        extract_prompt_btn.click(extract_from_chat, [chatbot], [prompt_display])
 
         # Copy prompt to clipboard (via JS) with toast
         copy_prompt_btn.click(
-            lambda x: x, [prompt_display], None,
-            js="(prompt) => {navigator.clipboard.writeText(prompt); showToast('Prompt copied to clipboard!', 'success'); return prompt;}"
+            lambda x: x,
+            [prompt_display],
+            None,
+            js="(prompt) => {navigator.clipboard.writeText(prompt); showToast('Prompt copied to clipboard!', 'success'); return prompt;}",
         )
 
-        clear_prompt_btn.click(
-            lambda: "", None, [prompt_display]
-        ).then(
+        clear_prompt_btn.click(lambda: "", None, [prompt_display]).then(
             lambda: "", None, [current_prompt_state]
         )
 
@@ -1609,10 +1590,10 @@ def create_app():
                 results = prompt_history.search_prompts(query)
                 choices = []
                 for entry in results[:10]:
-                    prompt = entry['prompt']
+                    prompt = entry["prompt"]
                     if len(prompt) > 60:
                         prompt = prompt[:60] + "..."
-                    use_info = f" ({entry['use_count']}x)" if entry.get('use_count', 1) > 1 else ""
+                    use_info = f" ({entry['use_count']}x)" if entry.get("use_count", 1) > 1 else ""
                     choices.append(f"{prompt}{use_info}")
 
             return gr.update(choices=choices)
@@ -1635,40 +1616,18 @@ def create_app():
             choices = prompt_history.get_dropdown_choices()
             return msg, gr.update(visible=True), gr.update(choices=choices)
 
-        load_prompt_btn.click(
-            load_selected_prompt,
-            [prompt_history_dropdown],
-            [prompt_display]
-        )
+        load_prompt_btn.click(load_selected_prompt, [prompt_history_dropdown], [prompt_display])
 
-        search_btn.click(
-            search_and_update_dropdown,
-            [prompt_search],
-            [prompt_history_dropdown]
-        )
+        search_btn.click(search_and_update_dropdown, [prompt_search], [prompt_history_dropdown])
 
-        prompt_search.submit(
-            search_and_update_dropdown,
-            [prompt_search],
-            [prompt_history_dropdown]
-        )
+        prompt_search.submit(search_and_update_dropdown, [prompt_search], [prompt_history_dropdown])
 
-        refresh_history_btn.click(
-            refresh_history,
-            None,
-            [prompt_history_dropdown]
-        )
+        refresh_history_btn.click(refresh_history, None, [prompt_history_dropdown])
 
-        export_prompts_btn.click(
-            export_history,
-            None,
-            [history_status, history_status]
-        )
+        export_prompts_btn.click(export_history, None, [history_status, history_status])
 
         import_file.change(
-            import_history,
-            [import_file],
-            [history_status, history_status, prompt_history_dropdown]
+            import_history, [import_file], [history_status, history_status, prompt_history_dropdown]
         )
 
         # Preset buttons
@@ -1677,27 +1636,19 @@ def create_app():
             return preset["width"], preset["height"], preset["steps"]
 
         preset_fast.click(
-            lambda: apply_preset("Fast Draft"),
-            None,
-            [width_slider, height_slider, steps_slider]
+            lambda: apply_preset("Fast Draft"), None, [width_slider, height_slider, steps_slider]
         )
 
         preset_balanced.click(
-            lambda: apply_preset("Balanced"),
-            None,
-            [width_slider, height_slider, steps_slider]
+            lambda: apply_preset("Balanced"), None, [width_slider, height_slider, steps_slider]
         )
 
         preset_quality.click(
-            lambda: apply_preset("High Quality"),
-            None,
-            [width_slider, height_slider, steps_slider]
+            lambda: apply_preset("High Quality"), None, [width_slider, height_slider, steps_slider]
         )
 
         preset_ultra.click(
-            lambda: apply_preset("Ultra Detail"),
-            None,
-            [width_slider, height_slider, steps_slider]
+            lambda: apply_preset("Ultra Detail"), None, [width_slider, height_slider, steps_slider]
         )
 
         # Update warnings when sliders change
@@ -1708,19 +1659,19 @@ def create_app():
         steps_slider.change(
             update_warnings_from_sliders,
             [steps_slider, width_slider, height_slider],
-            [vram_warning_display]
+            [vram_warning_display],
         )
 
         width_slider.change(
             update_warnings_from_sliders,
             [steps_slider, width_slider, height_slider],
-            [vram_warning_display]
+            [vram_warning_display],
         )
 
         height_slider.change(
             update_warnings_from_sliders,
             [steps_slider, width_slider, height_slider],
-            [vram_warning_display]
+            [vram_warning_display],
         )
 
         # Seed management functions
@@ -1739,6 +1690,7 @@ def create_app():
                     seed_val = gallery.get_last_seed()
                     if seed_val is None:
                         import random
+
                         seed_val = random.randint(0, 2**32 - 1)
 
                 new_seed = max(0, seed_val + adjustment)
@@ -1749,6 +1701,7 @@ def create_app():
         def random_seed():
             """Generate random seed"""
             import random
+
             return str(random.randint(0, 2**32 - 1))
 
         def toggle_seed_lock(is_locked, current_seed):
@@ -1781,39 +1734,21 @@ def create_app():
         # Wire up seed management buttons
         use_last_seed_btn.click(use_last_seed, None, seed_input)
 
-        seed_minus_100_btn.click(
-            lambda s: adjust_seed(s, -100), [seed_input], seed_input
-        )
-        seed_minus_10_btn.click(
-            lambda s: adjust_seed(s, -10), [seed_input], seed_input
-        )
-        seed_minus_1_btn.click(
-            lambda s: adjust_seed(s, -1), [seed_input], seed_input
-        )
-        seed_plus_1_btn.click(
-            lambda s: adjust_seed(s, 1), [seed_input], seed_input
-        )
-        seed_plus_10_btn.click(
-            lambda s: adjust_seed(s, 10), [seed_input], seed_input
-        )
-        seed_plus_100_btn.click(
-            lambda s: adjust_seed(s, 100), [seed_input], seed_input
-        )
+        seed_minus_100_btn.click(lambda s: adjust_seed(s, -100), [seed_input], seed_input)
+        seed_minus_10_btn.click(lambda s: adjust_seed(s, -10), [seed_input], seed_input)
+        seed_minus_1_btn.click(lambda s: adjust_seed(s, -1), [seed_input], seed_input)
+        seed_plus_1_btn.click(lambda s: adjust_seed(s, 1), [seed_input], seed_input)
+        seed_plus_10_btn.click(lambda s: adjust_seed(s, 10), [seed_input], seed_input)
+        seed_plus_100_btn.click(lambda s: adjust_seed(s, 100), [seed_input], seed_input)
         seed_random_btn.click(random_seed, None, seed_input)
 
         # Seed lock toggle
         seed_lock_checkbox.change(
-            toggle_seed_lock,
-            [seed_lock_checkbox, seed_input],
-            seed_lock_checkbox
+            toggle_seed_lock, [seed_lock_checkbox, seed_input], seed_lock_checkbox
         )
 
         # Seed history selection
-        seed_history_dropdown.change(
-            select_from_history,
-            [seed_history_dropdown],
-            seed_input
-        )
+        seed_history_dropdown.change(select_from_history, [seed_history_dropdown], seed_input)
 
         # Generation
         def generate_and_store(prompt_text, steps, width, height, seed_value, denoise, input_img):
@@ -1830,18 +1765,25 @@ def create_app():
                 gr.update(),  # stats
                 gr.update(value="", visible=False),  # smart_suggestion
                 gr.update(),  # seed_history
-                gr.update(value=progress_html, visible=True)  # progress
+                gr.update(value=progress_html, visible=True),  # progress
             )
 
             image, status, actual_seed, stats = generate_image(
-                prompt_text, steps, width, height, seed_value,
-                denoise=denoise, input_image_path=input_img
+                prompt_text,
+                steps,
+                width,
+                height,
+                seed_value,
+                denoise=denoise,
+                input_image_path=input_img,
             )
 
             # Update gallery display
             gallery_images = gallery.get_images()
             gallery_count = len(gallery_images)
-            info = f"Generated {gallery_count} image{'s' if gallery_count != 1 else ''} this session"
+            info = (
+                f"Generated {gallery_count} image{'s' if gallery_count != 1 else ''} this session"
+            )
 
             if actual_seed is not None:
                 info += f" | Last seed: {actual_seed}"
@@ -1849,7 +1791,9 @@ def create_app():
             # Check for smart switch suggestion
             suggestion_update = gr.update(value="", visible=False)
             if image is not None:
-                suggested = smart_switch.should_suggest_switch("image_generated", mode_manager.get_mode())
+                suggested = smart_switch.should_suggest_switch(
+                    "image_generated", mode_manager.get_mode()
+                )
                 if suggested:
                     suggestion_msg = smart_switch.get_suggestion_message(suggested)
                     suggestion_update = gr.update(value=suggestion_msg, visible=True)
@@ -1864,31 +1808,65 @@ def create_app():
 
         generate_btn.click(
             generate_and_store,
-            [prompt_display, steps_slider, width_slider, height_slider, seed_input, denoise_slider, input_image],
-            [generated_image, generation_status, current_image_state, session_gallery, gallery_info, stats_display, smart_suggestion, seed_history_dropdown, generation_progress]
+            [
+                prompt_display,
+                steps_slider,
+                width_slider,
+                height_slider,
+                seed_input,
+                denoise_slider,
+                input_image,
+            ],
+            [
+                generated_image,
+                generation_status,
+                current_image_state,
+                session_gallery,
+                gallery_info,
+                stats_display,
+                smart_suggestion,
+                seed_history_dropdown,
+                generation_progress,
+            ],
         )
 
         # Quick Actions Toolbar (wired after generate_and_store is defined)
         quick_generate_btn.click(
             generate_and_store,
-            [prompt_display, steps_slider, width_slider, height_slider, seed_input, denoise_slider, input_image],
-            [generated_image, generation_status, current_image_state, session_gallery, gallery_info, stats_display, smart_suggestion, seed_history_dropdown, generation_progress]
+            [
+                prompt_display,
+                steps_slider,
+                width_slider,
+                height_slider,
+                seed_input,
+                denoise_slider,
+                input_image,
+            ],
+            [
+                generated_image,
+                generation_status,
+                current_image_state,
+                session_gallery,
+                gallery_info,
+                stats_display,
+                smart_suggestion,
+                seed_history_dropdown,
+                generation_progress,
+            ],
         )
 
         quick_copy_btn.click(
-            lambda x: x, [prompt_display], None,
-            js="(prompt) => {navigator.clipboard.writeText(prompt); showToast('Prompt copied!', 'success'); return prompt;}"
+            lambda x: x,
+            [prompt_display],
+            None,
+            js="(prompt) => {navigator.clipboard.writeText(prompt); showToast('Prompt copied!', 'success'); return prompt;}",
         )
 
-        quick_clear_btn.click(
-            lambda: "", None, [prompt_display]
-        ).then(
+        quick_clear_btn.click(lambda: "", None, [prompt_display]).then(
             lambda: "", None, [current_prompt_state]
         )
 
-        quick_extract_btn.click(
-            extract_from_chat, [chatbot], [prompt_display]
-        )
+        quick_extract_btn.click(extract_from_chat, [chatbot], [prompt_display])
 
         # Gallery click to load image into vision chat
         def load_gallery_image(evt: gr.SelectData):
@@ -1909,16 +1887,12 @@ def create_app():
             return None, "Failed to load image", None
 
         session_gallery.select(
-            load_gallery_image,
-            None,
-            [current_image_state, gallery_info, vision_image_preview]
+            load_gallery_image, None, [current_image_state, gallery_info, vision_image_preview]
         )
-        
+
         # Refresh models
         refresh_models_btn.click(
-            lambda: gr.update(choices=get_available_models()),
-            None,
-            model_dropdown
+            lambda: gr.update(choices=get_available_models()), None, model_dropdown
         )
 
         # Keyboard shortcuts toggle
@@ -1927,22 +1901,14 @@ def create_app():
         def toggle_shortcuts(current_state):
             return not current_state, gr.update(visible=not current_state, open=not current_state)
 
-        shortcuts_btn.click(
-            toggle_shortcuts,
-            [shortcuts_state],
-            [shortcuts_state, shortcuts_help]
-        )
+        shortcuts_btn.click(toggle_shortcuts, [shortcuts_state], [shortcuts_state, shortcuts_help])
 
         # Auto-switch toggle
         def toggle_auto_switch(enabled):
             smart_switch.auto_switch_enabled = enabled
             return enabled
 
-        auto_switch_checkbox.change(
-            toggle_auto_switch,
-            [auto_switch_checkbox],
-            None
-        )
+        auto_switch_checkbox.change(toggle_auto_switch, [auto_switch_checkbox], None)
 
         # ====================================================================
         # BATCH QUEUE EVENT HANDLERS
@@ -1951,36 +1917,33 @@ def create_app():
         add_queue_btn.click(
             add_to_queue,
             [prompt_display, steps_slider, width_slider, height_slider, seed_input],
-            [generation_status, queue_status]
+            [generation_status, queue_status],
         )
 
         batch_variations_btn.click(
             lambda p, st, w, h, s, count: add_batch_variations(p, st, w, h, s, int(count)),
-            [prompt_display, steps_slider, width_slider, height_slider, seed_input, variation_count],
-            [generation_status, queue_status]
+            [
+                prompt_display,
+                steps_slider,
+                width_slider,
+                height_slider,
+                seed_input,
+                variation_count,
+            ],
+            [generation_status, queue_status],
         )
 
         process_queue_btn.click(
-            process_queue,
-            None,
-            [generated_image, generation_status, queue_status, stats_display]
+            process_queue, None, [generated_image, generation_status, queue_status, stats_display]
         ).then(
             update_gallery_display,
             [gallery_filter, gallery_sort, favorites_only_check],
-            [session_gallery, gallery_info]
+            [session_gallery, gallery_info],
         )
 
-        clear_completed_btn.click(
-            clear_queue,
-            None,
-            queue_status
-        )
+        clear_completed_btn.click(clear_queue, None, queue_status)
 
-        cancel_all_btn.click(
-            cancel_all_queue,
-            None,
-            queue_status
-        )
+        cancel_all_btn.click(cancel_all_queue, None, queue_status)
 
         # ====================================================================
         # ENHANCED GALLERY EVENT HANDLERS
@@ -1989,32 +1952,28 @@ def create_app():
         refresh_gallery_btn.click(
             update_gallery_display,
             [gallery_filter, gallery_sort, favorites_only_check],
-            [session_gallery, gallery_info]
+            [session_gallery, gallery_info],
         )
 
-        gallery_stats_btn.click(
-            show_gallery_stats,
-            None,
-            gallery_info
-        )
+        gallery_stats_btn.click(show_gallery_stats, None, gallery_info)
 
         # Auto-refresh gallery when filter/sort changes
         gallery_filter.change(
             update_gallery_display,
             [gallery_filter, gallery_sort, favorites_only_check],
-            [session_gallery, gallery_info]
+            [session_gallery, gallery_info],
         )
 
         gallery_sort.change(
             update_gallery_display,
             [gallery_filter, gallery_sort, favorites_only_check],
-            [session_gallery, gallery_info]
+            [session_gallery, gallery_info],
         )
 
         favorites_only_check.change(
             update_gallery_display,
             [gallery_filter, gallery_sort, favorites_only_check],
-            [session_gallery, gallery_info]
+            [session_gallery, gallery_info],
         )
 
         # ====================================================================
@@ -2022,48 +1981,39 @@ def create_app():
         # ====================================================================
 
         # Initialize workflow info on load
-        app.load(
-            get_workflow_info_display,
-            None,
-            workflow_info
-        )
+        app.load(get_workflow_info_display, None, workflow_info)
 
         # Workflow selection
         workflow_dropdown.change(
             switch_workflow,
             [workflow_dropdown, workflow_category_filter],
-            [workflow_dropdown, workflow_info, generation_status]
+            [workflow_dropdown, workflow_info, generation_status],
         )
 
         # Refresh workflows
         workflow_refresh_btn.click(
             refresh_workflows,
             [workflow_category_filter],
-            [workflow_dropdown, workflow_info, generation_status]
+            [workflow_dropdown, workflow_info, generation_status],
         )
 
         # Category filter
         workflow_category_filter.change(
-            filter_workflows_by_category,
-            [workflow_category_filter],
-            workflow_dropdown
+            filter_workflows_by_category, [workflow_category_filter], workflow_dropdown
         )
 
         # Import workflow
         workflow_import_btn.click(
             import_workflow_from_file,
             [workflow_upload_file],
-            [workflow_info, generation_status, workflow_dropdown]
+            [workflow_info, generation_status, workflow_dropdown],
         )
 
         # Export workflow
-        workflow_export_btn.click(
-            export_current_workflow,
-            None,
-            generation_status
-        )
+        workflow_export_btn.click(export_current_workflow, None, generation_status)
 
     return app
+
 
 # ============================================================================
 # MAIN
@@ -2073,8 +2023,8 @@ if __name__ == "__main__":
     logger.info("=" * 60)
     logger.info("AI IMAGE CHAT - Phase 2 (Vision Chat)")
     logger.info("=" * 60)
-    logger.info(f"User: ant")
-    logger.info(f"Hostname: nobara-laptop")
+    logger.info("User: ant")
+    logger.info("Hostname: nobara-laptop")
     logger.info(f"ComfyUI: {COMFYUI_API}")
     logger.info(f"Ollama: {OLLAMA_API}")
     logger.info(f"Text Chat Model: {OLLAMA_CHAT_MODEL}")
@@ -2093,10 +2043,6 @@ if __name__ == "__main__":
     logger.info("4. Generate → Create refined images")
     logger.info("")
     logger.info("=" * 60)
-    
+
     app = create_app()
-    app.launch(
-        server_name=GRADIO_SERVER_NAME,
-        server_port=GRADIO_SERVER_PORT,
-        share=GRADIO_SHARE
-    )
+    app.launch(server_name=GRADIO_SERVER_NAME, server_port=GRADIO_SERVER_PORT, share=GRADIO_SHARE)

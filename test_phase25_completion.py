@@ -7,15 +7,17 @@ Tests:
 2. Enhanced Gallery Features (filter, sort, favorites, delete)
 """
 
-import sys
 import os
+import sys
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core import GenerationQueue, JobStatus, ImageGallery
-from PIL import Image
 import tempfile
+
+from PIL import Image
+
+from core import GenerationQueue, ImageGallery, JobStatus
 
 
 def test_generation_queue():

@@ -3,29 +3,41 @@ ComfyUI API Bridge
 Handles all ComfyUI communication
 """
 
-import requests
-import json
-import time
 import io
-import random
+import json
 import logging
-from PIL import Image
-import websocket
+import random
+import time
 import uuid
+
+import requests
+from PIL import Image
+
 from config import (
-    COMFYUI_API, WORKFLOW_PATH, FINETUNE_NAME,
-    MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT, MIN_STEPS, MAX_STEPS
+    COMFYUI_API,
+    FINETUNE_NAME,
+    MAX_HEIGHT,
+    MAX_STEPS,
+    MAX_WIDTH,
+    MIN_HEIGHT,
+    MIN_STEPS,
+    MIN_WIDTH,
+    WORKFLOW_PATH,
+)
+from core.exceptions import (
+    WorkflowLoadError,
 )
 
 # Get logger for this module
 logger = logging.getLogger(__name__)
+
 
 class ComfyUIBridge:
     def __init__(self):
         self.api_url = COMFYUI_API
         self.workflow = None
         self.client_id = str(uuid.uuid4())
-        
+
     def is_available(self):
         """Check if ComfyUI is running and accessible"""
         try:
@@ -44,67 +56,69 @@ class ComfyUIBridge:
                 return {
                     "available": True,
                     "vram_used": stats.get("system", {}).get("vram_used_gb", "Unknown"),
-                    "vram_total": stats.get("system", {}).get("vram_total_gb", "Unknown")
+                    "vram_total": stats.get("system", {}).get("vram_total_gb", "Unknown"),
                 }
         except requests.RequestException as exc:
             logger.exception("Error getting ComfyUI status: %s", exc)
-        except ValueError as exc:
+        except ValueError:
             logger.exception("Invalid JSON from ComfyUI status response")
         return {"available": False}
-    
+
     def load_workflow(self):
-        """Load and convert workflow to API format"""
+        """
+        Load and convert workflow to API format
+
+        Raises:
+            WorkflowLoadError: If workflow file cannot be loaded or parsed
+        """
         try:
-            with open(WORKFLOW_PATH, 'r') as f:
+            with open(WORKFLOW_PATH) as f:
                 workflow_ui = json.load(f)
-            
+
             # Convert UI format to API format
             self.workflow = {}
-            
+
             # Skip UI-only nodes that don't affect generation
             skip_nodes = ["MarkdownNote", "Note", "Reroute"]
-            
+
             for node in workflow_ui.get("nodes", []):
                 node_id = str(node["id"])
                 node_type = node.get("type")
-                
+
                 # Skip UI-only nodes
                 if node_type in skip_nodes:
                     continue
-                
+
                 # Create API format node
-                api_node = {
-                    "class_type": node_type,
-                    "inputs": {}
-                }
-                
+                api_node = {"class_type": node_type, "inputs": {}}
+
                 # Add widget values as inputs
                 if "widgets_values" in node:
                     # Get input names from the node properties
                     widget_values = node["widgets_values"]
-                    
+
                     # Map widget values to input names based on node type
                     if node_type == "UNETLoader":
                         api_node["inputs"]["unet_name"] = FINETUNE_NAME
                         if len(widget_values) > 1:
                             api_node["inputs"]["weight_dtype"] = widget_values[1]
                         logger.info(f"✓ Workflow configured to use: {FINETUNE_NAME}")
-                    
+
                     elif node_type == "DualCLIPLoader":
                         if len(widget_values) >= 2:
                             api_node["inputs"]["clip_name1"] = widget_values[0]
                             api_node["inputs"]["clip_name2"] = widget_values[1]
                         if len(widget_values) >= 3:
                             api_node["inputs"]["type"] = widget_values[2]
-                    
+
                     elif node_type == "VAELoader":
                         if len(widget_values) > 0:
                             api_node["inputs"]["vae_name"] = widget_values[0]
-                    
+
                     elif node_type == "CLIPTextEncode":
                         if len(widget_values) > 0:
                             api_node["inputs"]["text"] = widget_values[0]
-                    
+
                     elif node_type == "KSampler":
                         if len(widget_values) >= 7:
                             api_node["inputs"]["seed"] = widget_values[0]
@@ -113,17 +127,17 @@ class ComfyUIBridge:
                             api_node["inputs"]["sampler_name"] = widget_values[4]
                             api_node["inputs"]["scheduler"] = widget_values[5]
                             api_node["inputs"]["denoise"] = widget_values[6]
-                    
+
                     elif node_type == "EmptySD3LatentImage":
                         if len(widget_values) >= 3:
                             api_node["inputs"]["width"] = widget_values[0]
                             api_node["inputs"]["height"] = widget_values[1]
                             api_node["inputs"]["batch_size"] = widget_values[2]
-                    
+
                     elif node_type == "SaveImage":
                         if len(widget_values) > 0:
                             api_node["inputs"]["filename_prefix"] = widget_values[0]
-                
+
                 # Add connections from links
                 if "inputs" in node:
                     for input_def in node["inputs"]:
@@ -135,17 +149,30 @@ class ComfyUIBridge:
                                     # link format: [id, source_node, source_slot, target_node, target_slot, type]
                                     source_node = str(link[1])
                                     source_slot = link[2]
-                                    api_node["inputs"][input_def["name"]] = [source_node, source_slot]
+                                    api_node["inputs"][input_def["name"]] = [
+                                        source_node,
+                                        source_slot,
+                                    ]
                                     break
-                
+
                 self.workflow[node_id] = api_node
-            
+
             return True
+        except FileNotFoundError:
+            logger.error(f"Workflow file not found: {WORKFLOW_PATH}")
+            raise WorkflowLoadError(
+                f"Workflow file not found: {WORKFLOW_PATH}. "
+                f"Please ensure the workflow file exists."
+            )
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in workflow file: {e}")
+            raise WorkflowLoadError(
+                f"Failed to parse workflow file '{WORKFLOW_PATH}': {e}. "
+                f"The workflow file may be corrupted or invalid."
+            )
         except Exception as e:
-            logger.error(f"Error loading workflow: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
+            logger.exception(f"Unexpected error loading workflow: {e}")
+            raise WorkflowLoadError(f"Failed to load workflow from '{WORKFLOW_PATH}': {e}")
 
     def load_workflow_from_data(self, workflow_data: dict):
         """Load workflow from dictionary data instead of file
@@ -168,10 +195,7 @@ class ComfyUIBridge:
                     continue
 
                 # Create API format node
-                api_node = {
-                    "class_type": node_type,
-                    "inputs": {}
-                }
+                api_node = {"class_type": node_type, "inputs": {}}
 
                 # Add widget values as inputs
                 if "widgets_values" in node:
@@ -200,18 +224,36 @@ class ComfyUIBridge:
 
                     elif node_type == "KSampler":
                         # Default values, will be replaced
-                        api_node["inputs"]["seed"] = widget_values[0] if len(widget_values) > 0 else 0
-                        api_node["inputs"]["steps"] = widget_values[2] if len(widget_values) > 2 else 20
-                        api_node["inputs"]["cfg"] = widget_values[3] if len(widget_values) > 3 else 1.0
-                        api_node["inputs"]["sampler_name"] = widget_values[4] if len(widget_values) > 4 else "euler"
-                        api_node["inputs"]["scheduler"] = widget_values[5] if len(widget_values) > 5 else "simple"
-                        api_node["inputs"]["denoise"] = widget_values[6] if len(widget_values) > 6 else 1.0
+                        api_node["inputs"]["seed"] = (
+                            widget_values[0] if len(widget_values) > 0 else 0
+                        )
+                        api_node["inputs"]["steps"] = (
+                            widget_values[2] if len(widget_values) > 2 else 20
+                        )
+                        api_node["inputs"]["cfg"] = (
+                            widget_values[3] if len(widget_values) > 3 else 1.0
+                        )
+                        api_node["inputs"]["sampler_name"] = (
+                            widget_values[4] if len(widget_values) > 4 else "euler"
+                        )
+                        api_node["inputs"]["scheduler"] = (
+                            widget_values[5] if len(widget_values) > 5 else "simple"
+                        )
+                        api_node["inputs"]["denoise"] = (
+                            widget_values[6] if len(widget_values) > 6 else 1.0
+                        )
 
                     elif node_type == "EmptySD3LatentImage":
                         # Default dimensions, will be replaced
-                        api_node["inputs"]["width"] = widget_values[0] if len(widget_values) > 0 else 1024
-                        api_node["inputs"]["height"] = widget_values[1] if len(widget_values) > 1 else 1024
-                        api_node["inputs"]["batch_size"] = widget_values[2] if len(widget_values) > 2 else 1
+                        api_node["inputs"]["width"] = (
+                            widget_values[0] if len(widget_values) > 0 else 1024
+                        )
+                        api_node["inputs"]["height"] = (
+                            widget_values[1] if len(widget_values) > 1 else 1024
+                        )
+                        api_node["inputs"]["batch_size"] = (
+                            widget_values[2] if len(widget_values) > 2 else 1
+                        )
 
                     elif node_type == "SaveImage":
                         if len(widget_values) > 0:
@@ -231,7 +273,10 @@ class ComfyUIBridge:
                                     # link format: [id, source_node, source_slot, target_node, target_slot, type]
                                     source_node = str(link[1])
                                     source_slot = link[2]
-                                    api_node["inputs"][input_def["name"]] = [source_node, source_slot]
+                                    api_node["inputs"][input_def["name"]] = [
+                                        source_node,
+                                        source_slot,
+                                    ]
                                     break
 
                 self.workflow[node_id] = api_node
@@ -241,6 +286,7 @@ class ComfyUIBridge:
         except Exception as e:
             logger.error(f"Error loading workflow from data: {e}")
             import traceback
+
             traceback.print_exc()
             return False
 
@@ -254,17 +300,13 @@ class ComfyUIBridge:
             str: Uploaded image filename, or None if failed
         """
         try:
-            with open(image_path, 'rb') as f:
-                files = {'image': f}
-                response = requests.post(
-                    f"{self.api_url}/upload/image",
-                    files=files,
-                    timeout=10
-                )
+            with open(image_path, "rb") as f:
+                files = {"image": f}
+                response = requests.post(f"{self.api_url}/upload/image", files=files, timeout=10)
 
                 if response.status_code == 200:
                     result = response.json()
-                    filename = result.get('name')
+                    filename = result.get("name")
                     logger.info(f"✓ Image uploaded: {filename}")
                     return filename
                 else:
@@ -274,8 +316,16 @@ class ComfyUIBridge:
             logger.error(f"Error uploading image: {e}")
             return None
 
-    def modify_prompt(self, prompt_text, steps=20, width=1024, height=1024, seed=None,
-                     denoise=1.0, input_image=None):
+    def modify_prompt(
+        self,
+        prompt_text,
+        steps=20,
+        width=1024,
+        height=1024,
+        seed=None,
+        denoise=1.0,
+        input_image=None,
+    ):
         """Modify workflow with new parameters
 
         Args:
@@ -325,21 +375,14 @@ class ComfyUIBridge:
                 node["inputs"]["image"] = input_image
 
         return workflow, actual_seed
-    
+
     def queue_prompt(self, workflow):
         """Send workflow to ComfyUI queue"""
         try:
-            payload = {
-                "prompt": workflow,
-                "client_id": self.client_id
-            }
-            
-            response = requests.post(
-                f"{self.api_url}/prompt",
-                json=payload,
-                timeout=5
-            )
-            
+            payload = {"prompt": workflow, "client_id": self.client_id}
+
+            response = requests.post(f"{self.api_url}/prompt", json=payload, timeout=5)
+
             if response.status_code == 200:
                 result = response.json()
                 prompt_id = result.get("prompt_id")
@@ -349,46 +392,58 @@ class ComfyUIBridge:
         except Exception as e:
             logger.error(f"Error queuing prompt: {e}")
             return None
-    
+
     def get_image(self, prompt_id, timeout=300):
         """Wait for and retrieve generated image"""
         start_time = time.time()
-        
+
         while time.time() - start_time < timeout:
             try:
                 # Check history
                 response = requests.get(f"{self.api_url}/history/{prompt_id}")
                 if response.status_code == 200:
                     history = response.json()
-                    
+
                     if prompt_id in history:
                         outputs = history[prompt_id].get("outputs", {})
-                        
+
                         # Look for SaveImage node output
                         for node_id, node_output in outputs.items():
                             if "images" in node_output:
                                 image_info = node_output["images"][0]
                                 filename = image_info["filename"]
                                 subfolder = image_info.get("subfolder", "")
-                                
+
                                 # Download image
                                 img_url = f"{self.api_url}/view"
-                                params = {"filename": filename, "subfolder": subfolder, "type": "output"}
-                                
+                                params = {
+                                    "filename": filename,
+                                    "subfolder": subfolder,
+                                    "type": "output",
+                                }
+
                                 img_response = requests.get(img_url, params=params)
                                 if img_response.status_code == 200:
                                     image = Image.open(io.BytesIO(img_response.content))
                                     return image
-                
+
                 time.sleep(1)
             except Exception as e:
                 logger.error(f"Error checking for image: {e}")
                 time.sleep(1)
-        
+
         return None
-    
-    def generate_image(self, prompt_text, steps=20, width=1024, height=1024, seed=None,
-                      denoise=1.0, input_image_path=None):
+
+    def generate_image(
+        self,
+        prompt_text,
+        steps=20,
+        width=1024,
+        height=1024,
+        seed=None,
+        denoise=1.0,
+        input_image_path=None,
+    ):
         """Complete generation workflow (text2img or img2img)
 
         Args:
@@ -426,8 +481,7 @@ class ComfyUIBridge:
 
         # Modify workflow
         workflow, actual_seed = self.modify_prompt(
-            prompt_text, steps, width, height, seed,
-            denoise=denoise, input_image=uploaded_filename
+            prompt_text, steps, width, height, seed, denoise=denoise, input_image=uploaded_filename
         )
         if not workflow:
             return None, "Failed to prepare workflow", None
@@ -457,6 +511,7 @@ class ComfyUIBridge:
             return image, msg, actual_seed
         else:
             return None, "⏱️ Timeout waiting for image. Check ComfyUI.", None
+
 
 # Global instance
 comfy = ComfyUIBridge()

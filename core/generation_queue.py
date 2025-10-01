@@ -4,17 +4,17 @@ Generation Queue Module
 Manages batch image generation with queue system.
 """
 
+import logging
 import time
 from datetime import datetime
-from typing import List, Dict, Optional, Callable
 from enum import Enum
-import logging
 
 logger = logging.getLogger(__name__)
 
 
 class JobStatus(Enum):
     """Status of a generation job"""
+
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -38,20 +38,20 @@ class GenerationJob:
         self.seed = seed
         self.status = JobStatus.PENDING
         self.created_at = datetime.now()
-        self.started_at: Optional[datetime] = None
-        self.completed_at: Optional[datetime] = None
-        self.error_message: Optional[str] = None
+        self.started_at: datetime | None = None
+        self.completed_at: datetime | None = None
+        self.error_message: str | None = None
         self.result_image = None
         self.result_seed = None
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Convert job to dictionary for display"""
         return {
             "id": self.id,
             "prompt": self.prompt[:50] + "..." if len(self.prompt) > 50 else self.prompt,
             "settings": f"{self.width}x{self.height}, {self.steps} steps",
             "status": self.status.value,
-            "seed": self.seed if self.seed != -1 else "random"
+            "seed": self.seed if self.seed != -1 else "random",
         }
 
 
@@ -59,8 +59,8 @@ class GenerationQueue:
     """Manages a queue of image generation jobs"""
 
     def __init__(self):
-        self.jobs: List[GenerationJob] = []
-        self.current_job: Optional[GenerationJob] = None
+        self.jobs: list[GenerationJob] = []
+        self.current_job: GenerationJob | None = None
         self.is_processing = False
         self.paused = False
 
@@ -71,8 +71,9 @@ class GenerationQueue:
         logger.info(f"Added job {job.id} to queue")
         return job.id
 
-    def add_batch_variations(self, prompt: str, width: int, height: int, steps: int,
-                            seed: int, count: int = 4) -> List[str]:
+    def add_batch_variations(
+        self, prompt: str, width: int, height: int, steps: int, seed: int, count: int = 4
+    ) -> list[str]:
         """Add multiple jobs with seed variations"""
         job_ids = []
 
@@ -87,14 +88,14 @@ class GenerationQueue:
         logger.info(f"Added {count} seed variations to queue")
         return job_ids
 
-    def get_next_job(self) -> Optional[GenerationJob]:
+    def get_next_job(self) -> GenerationJob | None:
         """Get the next pending job"""
         for job in self.jobs:
             if job.status == JobStatus.PENDING:
                 return job
         return None
 
-    def get_job(self, job_id: str) -> Optional[GenerationJob]:
+    def get_job(self, job_id: str) -> GenerationJob | None:
         """Get job by ID"""
         for job in self.jobs:
             if job.id == job_id:
@@ -118,18 +119,17 @@ class GenerationQueue:
         the reference when the job is no longer in the queue or not processing.
         """
         original_count = len(self.jobs)
-        self.jobs = [job for job in self.jobs
-                    if job.status not in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]]
+        self.jobs = [
+            job
+            for job in self.jobs
+            if job.status not in [JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED]
+        ]
         removed = original_count - len(self.jobs)
 
         # Clear stale current_job references after removing finished work
         if self.current_job:
             # If job is not processing, clear the reference
-            if self.current_job.status != JobStatus.PROCESSING:
-                self.current_job = None
-                self.is_processing = False
-            # If job was removed from the queue, clear the reference
-            elif self.current_job not in self.jobs:
+            if self.current_job.status != JobStatus.PROCESSING or self.current_job not in self.jobs:
                 self.current_job = None
                 self.is_processing = False
 
@@ -155,7 +155,7 @@ class GenerationQueue:
         self.paused = False
         logger.info("Queue resumed")
 
-    def get_queue_status(self) -> Dict:
+    def get_queue_status(self) -> dict:
         """Get current queue status"""
         pending = sum(1 for job in self.jobs if job.status == JobStatus.PENDING)
         processing = sum(1 for job in self.jobs if job.status == JobStatus.PROCESSING)
@@ -169,8 +169,10 @@ class GenerationQueue:
             "completed": completed,
             "failed": failed,
             "paused": self.paused,
-            "current_job": self._get_current_job_info()
+            "current_job": self._get_current_job_info(),
         }
+
+    def _get_current_job_info(self):
         """Return information about the current job if it's valid. Does not modify state."""
         if not self.current_job:
             return None
@@ -190,6 +192,7 @@ class GenerationQueue:
             return
         if self.current_job not in self.jobs or self.current_job.status != JobStatus.PROCESSING:
             self.current_job = None
+
     def get_queue_display(self) -> str:
         """Get formatted queue status for display"""
         status = self.get_queue_status()
@@ -212,7 +215,7 @@ class GenerationQueue:
 
         return " | ".join(parts)
 
-    def get_jobs_list(self) -> List[Dict]:
+    def get_jobs_list(self) -> list[dict]:
         """Get list of all jobs for display"""
         return [job.to_dict() for job in self.jobs]
 
