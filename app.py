@@ -340,7 +340,7 @@ def add_to_queue(prompt_text, steps, width, height, seed_value):
         try:
             seed = int(seed_value)
         except ValueError:
-            logger.warning("Invalid seed input '%s'; using random seed", seed_value)
+            logger.warning(f"Invalid seed input '{seed_value}'; using random seed")
             seed = -1
 
     job_id = gen_queue.add_job(prompt_text, width, height, steps, seed)
