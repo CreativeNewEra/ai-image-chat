@@ -31,9 +31,10 @@ class ComfyUIBridge:
         try:
             response = requests.get(f"{self.api_url}/system_stats", timeout=2)
             return response.status_code == 200
-        except:
-            return False
-    
+        except requests.RequestException as exc:
+            logger.warning("ComfyUI not available: %s", exc)
+        return False
+
     def get_status(self):
         """Get detailed status of ComfyUI"""
         try:
@@ -45,8 +46,10 @@ class ComfyUIBridge:
                     "vram_used": stats.get("system", {}).get("vram_used_gb", "Unknown"),
                     "vram_total": stats.get("system", {}).get("vram_total_gb", "Unknown")
                 }
-        except:
-            pass
+        except requests.RequestException as exc:
+            logger.exception("Error getting ComfyUI status: %s", exc)
+        except ValueError as exc:
+            logger.exception("Invalid JSON from ComfyUI status response")
         return {"available": False}
     
     def load_workflow(self):
