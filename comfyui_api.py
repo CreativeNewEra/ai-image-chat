@@ -32,7 +32,7 @@ class ComfyUIBridge:
             response = requests.get(f"{self.api_url}/system_stats", timeout=2)
             return response.status_code == 200
         except requests.RequestException as exc:
-            logger.exception("Error checking ComfyUI availability: %s", exc)
+            logger.warning("ComfyUI not available: %s", exc)
         return False
 
     def get_status(self):
