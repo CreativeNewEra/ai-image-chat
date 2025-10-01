@@ -271,7 +271,7 @@ def generate_image(
         try:
             seed = int(seed_value)
         except ValueError:
-            logger.warning("Invalid seed input '%s'; using managed default", seed_value)
+            logger.warning(f"Invalid seed input '{seed_value}'; using managed default")
             seed = None
 
     # Check if seed is locked
