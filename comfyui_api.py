@@ -33,10 +33,18 @@ logger = logging.getLogger(__name__)
 
 
 class ComfyUIBridge:
-    def __init__(self):
+    def __init__(
+        self,
+        history_request_timeout=5,
+        image_request_timeout=10,
+        poll_interval=1,
+    ):
         self.api_url = COMFYUI_API
         self.workflow = None
         self.client_id = str(uuid.uuid4())
+        self.history_request_timeout = history_request_timeout
+        self.image_request_timeout = image_request_timeout
+        self.poll_interval = poll_interval
 
     def is_available(self):
         """Check if ComfyUI is running and accessible"""
@@ -393,44 +401,103 @@ class ComfyUIBridge:
             logger.error(f"Error queuing prompt: {e}")
             return None
 
-    def get_image(self, prompt_id, timeout=300):
+    def get_image(
+        self,
+        prompt_id,
+        timeout=300,
+        history_timeout=None,
+        image_timeout=None,
+    ):
         """Wait for and retrieve generated image"""
+        history_timeout = (
+            self.history_request_timeout if history_timeout is None else history_timeout
+        )
+        image_timeout = (
+            self.image_request_timeout if image_timeout is None else image_timeout
+        )
         start_time = time.time()
 
         while time.time() - start_time < timeout:
             try:
                 # Check history
-                response = requests.get(f"{self.api_url}/history/{prompt_id}")
-                if response.status_code == 200:
+                response = requests.get(
+                    f"{self.api_url}/history/{prompt_id}", timeout=history_timeout
+                )
+            except requests.Timeout as exc:
+                logger.warning(
+                    "History request timed out for prompt %s: %s",
+                    prompt_id,
+                    exc,
+                )
+                time.sleep(self.poll_interval)
+                continue
+            except Exception as exc:
+                logger.error(
+                    "Error checking history for prompt %s: %s",
+                    prompt_id,
+                    exc,
+                )
+                time.sleep(self.poll_interval)
+                continue
+
+            if response.status_code == 200:
+                try:
                     history = response.json()
+                except ValueError as exc:
+                    logger.error(
+                        "Invalid JSON in history response for prompt %s: %s",
+                        prompt_id,
+                        exc,
+                    )
+                    time.sleep(self.poll_interval)
+                    continue
 
-                    if prompt_id in history:
-                        outputs = history[prompt_id].get("outputs", {})
+                if prompt_id in history:
+                    outputs = history[prompt_id].get("outputs", {})
 
-                        # Look for SaveImage node output
-                        for node_id, node_output in outputs.items():
-                            if "images" in node_output:
-                                image_info = node_output["images"][0]
-                                filename = image_info["filename"]
-                                subfolder = image_info.get("subfolder", "")
+                    # Look for SaveImage node output
+                    for node_id, node_output in outputs.items():
+                        if "images" in node_output:
+                            image_info = node_output["images"][0]
+                            filename = image_info["filename"]
+                            subfolder = image_info.get("subfolder", "")
 
-                                # Download image
-                                img_url = f"{self.api_url}/view"
-                                params = {
-                                    "filename": filename,
-                                    "subfolder": subfolder,
-                                    "type": "output",
-                                }
+                            # Download image
+                            img_url = f"{self.api_url}/view"
+                            params = {
+                                "filename": filename,
+                                "subfolder": subfolder,
+                                "type": "output",
+                            }
 
-                                img_response = requests.get(img_url, params=params)
-                                if img_response.status_code == 200:
-                                    image = Image.open(io.BytesIO(img_response.content))
-                                    return image
+                            try:
+                                img_response = requests.get(
+                                    img_url,
+                                    params=params,
+                                    timeout=image_timeout,
+                                )
+                            except requests.Timeout as exc:
+                                logger.warning(
+                                    "Image download timed out for prompt %s (%s): %s",
+                                    prompt_id,
+                                    filename,
+                                    exc,
+                                )
+                                continue
+                            except Exception as exc:
+                                logger.error(
+                                    "Error downloading image for prompt %s (%s): %s",
+                                    prompt_id,
+                                    filename,
+                                    exc,
+                                )
+                                continue
 
-                time.sleep(1)
-            except Exception as e:
-                logger.error(f"Error checking for image: {e}")
-                time.sleep(1)
+                            if img_response.status_code == 200:
+                                image = Image.open(io.BytesIO(img_response.content))
+                                return image
+
+            time.sleep(self.poll_interval)
 
         return None
 
