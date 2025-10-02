@@ -14,9 +14,12 @@ outputs/
 *.jpg
 *.jpeg
 
-# Prompt history
-prompt_history.json
-prompt_export_*.json
+# Data directory (runtime files)
+data/*
+!data/.gitkeep
+!data/logs/
+data/logs/*
+!data/logs/.gitkeep
 
 # Gradio
 gradio_cached_examples/
@@ -36,11 +39,6 @@ Thumbs.db
 
 # Logs (but keep TROUBLESHOOTING.md)
 *.log
-
-# Test files - KEEP ALL TEST FILES FOR CI/CD
-# test_*.py files are important for automated testing
-# !test_new_features.py
-# !test_buttons.py
 
 # ComfyUI workflows (except templates in workflows/ directory)
 flux1_krea_dev.json

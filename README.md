@@ -91,17 +91,23 @@ ai-image-chat/
 │   ├── mode_manager.py         # Mode switching state machine
 │   ├── workflow_manager.py     # Workflow discovery helpers
 │   └── ...                     # Additional VRAM + session helpers
-├── ui/                         # Placeholder package for UI components
 ├── utils/                      # Shared utility helpers
 │   └── image_utils.py          # Image conversion helpers
 ├── workflows/                  # ComfyUI workflow JSONs
 │   ├── img2img/
 │   └── text2img/
-├── test_buttons.py             # Targeted UI regression checks
-├── test_comprehensive.py       # End-to-end smoke tests
-├── test_new_features.py        # Feature-specific unit tests
-├── test_phase25_completion.py  # Phase 2.5 regression coverage
-└── test_workflow_manager.py    # Workflow manager unit tests
+├── tests/                      # Test suite
+│   ├── test_buttons.py         # Targeted UI regression checks
+│   ├── test_comprehensive.py   # End-to-end smoke tests
+│   ├── test_new_features.py    # Feature-specific unit tests
+│   └── test_workflow_manager.py # Workflow manager unit tests
+├── scripts/                    # Shell scripts
+│   ├── start_app.sh            # Launch the Gradio app
+│   ├── start_comfy.sh          # Launch ComfyUI
+│   └── check_code.sh           # Code quality checks
+└── data/                       # Runtime data (gitignored)
+    ├── logs/                   # Application logs
+    └── prompt_history.json     # Saved prompts
 ```
 
 ## 🎯 Usage Workflow

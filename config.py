@@ -19,7 +19,7 @@ load_dotenv()
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("ai_image_chat.log"), logging.StreamHandler()],
+    handlers=[logging.FileHandler("data/logs/ai_image_chat.log"), logging.StreamHandler()],
 )
 
 # Set log level from environment variable if provided
@@ -43,7 +43,7 @@ FINETUNE_NAME = os.getenv("FINETUNE_NAME", "unstableEvolution_Fp811GB.safetensor
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "./outputs")
 
 # Prompt history file
-PROMPT_HISTORY_FILE = os.getenv("PROMPT_HISTORY_FILE", "./prompt_history.json")
+PROMPT_HISTORY_FILE = os.getenv("PROMPT_HISTORY_FILE", "./data/prompt_history.json")
 
 # ============================================================================
 # API ENDPOINTS

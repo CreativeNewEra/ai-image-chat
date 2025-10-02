@@ -19,7 +19,7 @@ AI Image Chat is a Gradio application for AI-assisted image generation using Com
 
 ```bash
 # Start ComfyUI (Terminal 1)
-./start_comfy.sh
+./scripts/start_comfy.sh
 
 # Or manually:
 cd /home/ant/AI/ComfyUI
@@ -30,7 +30,7 @@ python main.py --listen --cuda-malloc --force-channels-last --use-sage-attention
 python app.py
 
 # Or via script:
-./start_app.sh
+./scripts/start_app.sh
 ```
 
 ### Access URLs
@@ -48,10 +48,13 @@ pip install -r requirements.txt
 
 ```bash
 # Unit tests for core modules
-python test_new_features.py          # Phase 2.5 features
-python test_phase25_completion.py    # Phase 2.5 completion tests
-python test_workflow_manager.py      # Workflow manager tests
-python test_comprehensive.py         # Comprehensive integration tests
+pytest tests/test_new_features.py          # Phase 2.5 features
+pytest tests/test_phase25_completion.py    # Phase 2.5 completion tests
+pytest tests/test_workflow_manager.py      # Workflow manager tests
+pytest tests/test_comprehensive.py         # Comprehensive integration tests
+
+# Run all tests
+pytest tests/
 
 # Manual testing workflow
 # 1. Start app → Switch to Chat mode → Verify Ollama loads
