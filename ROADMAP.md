@@ -371,11 +371,24 @@ This document tracks all planned features, improvements, and phases for the AI I
 - [ ] Background VRAM monitoring
 
 ### Code Quality
-- [ ] Add unit tests
+- [x] Add unit tests ✅ PARTIAL (handler tests added)
+- [x] Extract event handlers to modules ✅ COMPLETED (58 handlers extracted)
+- [x] Split large UI components ✅ COMPLETED (generation_panel split into 3)
 - [ ] Type hints throughout
 - [ ] Better error handling
 - [ ] Documentation improvements
 - [ ] Logging system
+
+### Architecture Improvements
+- [ ] **Application Class Pattern (Option 2)**
+  - Replace global state with class-based architecture
+  - Implement full dependency injection
+  - Enable multiple app instances
+  - Improve testability with mock-free testing
+  - Add configuration-driven app initialization
+  - **Effort:** 4-6 hours | **Benefit:** Best-practice architecture
+  - **Status:** Planned (Option 1 completed - handlers extracted)
+  - **Context:** See CLAUDE.md "Option 2: Application Class Pattern" section
 
 ---
 
@@ -578,5 +591,5 @@ Want to implement a feature from this roadmap? Here's how:
 
 ---
 
-**Last Updated:** 2025-10-03
-**Version:** Phase 2 Complete + QOL Features + UI/UX Polish (Themes, Prompt Composer)
+**Last Updated:** 2025-10-04
+**Version:** Phase 2 Complete + QOL Features + UI/UX Polish + Handler Refactoring Complete

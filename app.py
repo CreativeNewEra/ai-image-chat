@@ -35,7 +35,9 @@ from core import (
 from ui.components import (
     create_chat_interface,
     create_gallery_view,
-    create_generation_panel,
+    create_generation_controls,
+    create_generation_settings,
+    create_queue_panel,
     create_mode_selector,
     create_prompt_composer,
     create_theme_settings,
@@ -1331,11 +1333,22 @@ def create_app():
             # ============================================================
             # GENERATION PANEL
             # ============================================================
-            # Extracted to ui/components/generation_panel.py for better maintainability
+            # Extracted to ui/components/generation_controls.py, generation_settings.py, and queue_panel.py
+            # for better maintainability (split from generation_panel.py)
 
-            gen_components = create_generation_panel(
-                workflow_manager=workflow_manager,
+            # Create generation controls (prompt, presets, generate button, image display)
+            gen_controls = create_generation_controls(
                 prompt_history=prompt_history,
+                default_config={
+                    "DEFAULT_STEPS": DEFAULT_STEPS,
+                    "DEFAULT_WIDTH": DEFAULT_WIDTH,
+                    "DEFAULT_HEIGHT": DEFAULT_HEIGHT,
+                },
+            )
+
+            # Create generation settings (parameters, workflow, statistics)
+            gen_settings = create_generation_settings(
+                workflow_manager=workflow_manager,
                 session_stats=session_stats,
                 default_config={
                     "DEFAULT_STEPS": DEFAULT_STEPS,
@@ -1344,67 +1357,75 @@ def create_app():
                 },
             )
 
-            # Extract components from dictionary for easier access
-            quick_generate_btn = gen_components["quick_generate_btn"]
-            quick_copy_btn = gen_components["quick_copy_btn"]
-            quick_clear_btn = gen_components["quick_clear_btn"]
-            quick_extract_btn = gen_components["quick_extract_btn"]
-            prompt_display = gen_components["prompt_display"]
-            extract_prompt_btn = gen_components["extract_prompt_btn"]
-            copy_prompt_btn = gen_components["copy_prompt_btn"]
-            clear_prompt_btn = gen_components["clear_prompt_btn"]
-            prompt_search = gen_components["prompt_search"]
-            search_btn = gen_components["search_btn"]
-            prompt_history_dropdown = gen_components["prompt_history_dropdown"]
-            load_prompt_btn = gen_components["load_prompt_btn"]
-            refresh_history_btn = gen_components["refresh_history_btn"]
-            export_prompts_btn = gen_components["export_prompts_btn"]
-            import_file = gen_components["import_file"]
-            history_status = gen_components["history_status"]
-            preset_fast = gen_components["preset_fast"]
-            preset_balanced = gen_components["preset_balanced"]
-            preset_quality = gen_components["preset_quality"]
-            preset_ultra = gen_components["preset_ultra"]
-            workflow_dropdown = gen_components["workflow_dropdown"]
-            workflow_refresh_btn = gen_components["workflow_refresh_btn"]
-            workflow_category_filter = gen_components["workflow_category_filter"]
-            workflow_info = gen_components["workflow_info"]
-            workflow_upload_file = gen_components["workflow_upload_file"]
-            workflow_import_btn = gen_components["workflow_import_btn"]
-            workflow_export_btn = gen_components["workflow_export_btn"]
-            steps_slider = gen_components["steps_slider"]
-            width_slider = gen_components["width_slider"]
-            height_slider = gen_components["height_slider"]
-            seed_input = gen_components["seed_input"]
-            seed_lock_checkbox = gen_components["seed_lock_checkbox"]
-            use_last_seed_btn = gen_components["use_last_seed_btn"]
-            seed_random_btn = gen_components["seed_random_btn"]
-            seed_minus_100_btn = gen_components["seed_minus_100_btn"]
-            seed_minus_10_btn = gen_components["seed_minus_10_btn"]
-            seed_minus_1_btn = gen_components["seed_minus_1_btn"]
-            seed_plus_1_btn = gen_components["seed_plus_1_btn"]
-            seed_plus_10_btn = gen_components["seed_plus_10_btn"]
-            seed_plus_100_btn = gen_components["seed_plus_100_btn"]
-            seed_history_dropdown = gen_components["seed_history_dropdown"]
-            input_image = gen_components["input_image"]
-            denoise_slider = gen_components["denoise_slider"]
-            generate_btn = gen_components["generate_btn"]
-            vram_warning_display = gen_components["vram_warning_display"]
-            generation_progress = gen_components["generation_progress"]
-            generation_status = gen_components["generation_status"]
-            generated_image = gen_components["generated_image"]
-            gen_variations_btn = gen_components["gen_variations_btn"]
-            gen_refine_btn = gen_components["gen_refine_btn"]
-            gen_favorite_btn = gen_components["gen_favorite_btn"]
-            gen_copy_seed_btn = gen_components["gen_copy_seed_btn"]
-            stats_display = gen_components["stats_display"]
-            add_queue_btn = gen_components["add_queue_btn"]
-            batch_variations_btn = gen_components["batch_variations_btn"]
-            variation_count = gen_components["variation_count"]
-            queue_status = gen_components["queue_status"]
-            process_queue_btn = gen_components["process_queue_btn"]
-            clear_completed_btn = gen_components["clear_completed_btn"]
-            cancel_all_btn = gen_components["cancel_all_btn"]
+            # Create batch queue panel
+            queue_components = create_queue_panel()
+
+            # Extract components from dictionaries for easier access
+            # From generation_controls
+            quick_generate_btn = gen_controls["quick_generate_btn"]
+            quick_copy_btn = gen_controls["quick_copy_btn"]
+            quick_clear_btn = gen_controls["quick_clear_btn"]
+            quick_extract_btn = gen_controls["quick_extract_btn"]
+            prompt_display = gen_controls["prompt_display"]
+            extract_prompt_btn = gen_controls["extract_prompt_btn"]
+            copy_prompt_btn = gen_controls["copy_prompt_btn"]
+            clear_prompt_btn = gen_controls["clear_prompt_btn"]
+            prompt_search = gen_controls["prompt_search"]
+            search_btn = gen_controls["search_btn"]
+            prompt_history_dropdown = gen_controls["prompt_history_dropdown"]
+            load_prompt_btn = gen_controls["load_prompt_btn"]
+            refresh_history_btn = gen_controls["refresh_history_btn"]
+            export_prompts_btn = gen_controls["export_prompts_btn"]
+            import_file = gen_controls["import_file"]
+            history_status = gen_controls["history_status"]
+            preset_fast = gen_controls["preset_fast"]
+            preset_balanced = gen_controls["preset_balanced"]
+            preset_quality = gen_controls["preset_quality"]
+            preset_ultra = gen_controls["preset_ultra"]
+            generate_btn = gen_controls["generate_btn"]
+            vram_warning_display = gen_controls["vram_warning_display"]
+            generation_progress = gen_controls["generation_progress"]
+            generation_status = gen_controls["generation_status"]
+            generated_image = gen_controls["generated_image"]
+            gen_variations_btn = gen_controls["gen_variations_btn"]
+            gen_refine_btn = gen_controls["gen_refine_btn"]
+            gen_favorite_btn = gen_controls["gen_favorite_btn"]
+            gen_copy_seed_btn = gen_controls["gen_copy_seed_btn"]
+
+            # From generation_settings
+            steps_slider = gen_settings["steps_slider"]
+            width_slider = gen_settings["width_slider"]
+            height_slider = gen_settings["height_slider"]
+            seed_input = gen_settings["seed_input"]
+            seed_lock_checkbox = gen_settings["seed_lock_checkbox"]
+            use_last_seed_btn = gen_settings["use_last_seed_btn"]
+            seed_random_btn = gen_settings["seed_random_btn"]
+            seed_minus_100_btn = gen_settings["seed_minus_100_btn"]
+            seed_minus_10_btn = gen_settings["seed_minus_10_btn"]
+            seed_minus_1_btn = gen_settings["seed_minus_1_btn"]
+            seed_plus_1_btn = gen_settings["seed_plus_1_btn"]
+            seed_plus_10_btn = gen_settings["seed_plus_10_btn"]
+            seed_plus_100_btn = gen_settings["seed_plus_100_btn"]
+            seed_history_dropdown = gen_settings["seed_history_dropdown"]
+            input_image = gen_settings["input_image"]
+            denoise_slider = gen_settings["denoise_slider"]
+            workflow_dropdown = gen_settings["workflow_dropdown"]
+            workflow_refresh_btn = gen_settings["workflow_refresh_btn"]
+            workflow_category_filter = gen_settings["workflow_category_filter"]
+            workflow_info = gen_settings["workflow_info"]
+            workflow_upload_file = gen_settings["workflow_upload_file"]
+            workflow_import_btn = gen_settings["workflow_import_btn"]
+            workflow_export_btn = gen_settings["workflow_export_btn"]
+            stats_display = gen_settings["stats_display"]
+
+            # From queue_panel
+            add_queue_btn = queue_components["add_queue_btn"]
+            batch_variations_btn = queue_components["batch_variations_btn"]
+            variation_count = queue_components["variation_count"]
+            queue_status = queue_components["queue_status"]
+            process_queue_btn = queue_components["process_queue_btn"]
+            clear_completed_btn = queue_components["clear_completed_btn"]
+            cancel_all_btn = queue_components["cancel_all_btn"]
 
         # ====================================================================
         # GALLERY SECTION

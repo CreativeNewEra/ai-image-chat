@@ -6,12 +6,16 @@ This module contains reusable UI component builders for the AI Image Chat applic
 
 ```
 ui/components/
-├── __init__.py           # Module exports and documentation
-├── mode_selector.py      # Mode selection and status display
-├── chat_interface.py     # Text and Vision chat interfaces
-├── generation_panel.py   # Image generation controls and settings
-├── gallery_view.py       # Session gallery with filtering/sorting
-└── README.md            # This file
+├── __init__.py                 # Module exports and documentation
+├── mode_selector.py            # Mode selection and status display
+├── chat_interface.py           # Text and Vision chat interfaces
+├── generation_controls.py      # Main generation UI (prompt, presets, image display)
+├── generation_settings.py      # Generation parameters (steps, seed, workflow)
+├── queue_panel.py              # Batch generation queue management
+├── gallery_view.py             # Session gallery with filtering/sorting
+├── theme_settings.py           # Theme customization panel
+├── prompt_composer_panel.py    # Tag-based prompt building UI
+└── README.md                   # This file
 ```
 
 ## Component Files
@@ -93,19 +97,17 @@ send_btn.click(fn=chat_handler, inputs=[chat_components['msg']], outputs=[chatbo
 
 ---
 
-### `generation_panel.py`
+### `generation_controls.py`
 
-**Purpose:** Provides all image generation controls, settings, workflow management, and batch queue.
+**Purpose:** Provides main generation controls UI including prompt editor, presets, generate button, and image display with action buttons.
 
-**Function:** `create_generation_panel(workflow_manager, prompt_history, session_stats, default_config: dict) -> dict`
+**Function:** `create_generation_controls(prompt_history, default_config: dict) -> dict`
 
 **Parameters:**
-- `workflow_manager`: WorkflowManager instance
 - `prompt_history`: PromptHistory instance
-- `session_stats`: SessionStats instance
 - `default_config`: Dictionary with `DEFAULT_STEPS`, `DEFAULT_WIDTH`, `DEFAULT_HEIGHT`
 
-**Returns Dictionary Keys:**
+**Returns Dictionary Keys (29 total):**
 
 **Quick Actions:**
 - `quick_generate_btn`, `quick_copy_btn`, `quick_clear_btn`, `quick_extract_btn`
@@ -119,8 +121,43 @@ send_btn.click(fn=chat_handler, inputs=[chat_components['msg']], outputs=[chatbo
 **Presets:**
 - `preset_fast`, `preset_balanced`, `preset_quality`, `preset_ultra`
 
-**Workflow:**
-- `workflow_dropdown`, `workflow_refresh_btn`, `workflow_category_filter`, `workflow_info`, `workflow_upload_file`, `workflow_import_btn`, `workflow_export_btn`
+**Generation:**
+- `generate_btn`, `vram_warning_display`, `generation_progress`, `generation_status`, `generated_image`
+
+**Image Actions:**
+- `gen_variations_btn`, `gen_refine_btn`, `gen_favorite_btn`, `gen_copy_seed_btn`
+
+**Usage:**
+```python
+from ui.components import create_generation_controls
+
+# Create the component
+gen_controls = create_generation_controls(
+    prompt_history=prompt_history,
+    default_config={'DEFAULT_STEPS': 20, 'DEFAULT_WIDTH': 1024, 'DEFAULT_HEIGHT': 1024}
+)
+
+# Access individual components
+generate_btn = gen_controls['generate_btn']
+prompt_display = gen_controls['prompt_display']
+```
+
+**Integration:** Works with `PromptHistory` for prompt management.
+
+---
+
+### `generation_settings.py`
+
+**Purpose:** Provides generation parameter controls including steps, dimensions, seed management, workflow selection, and statistics.
+
+**Function:** `create_generation_settings(workflow_manager, session_stats, default_config: dict) -> dict`
+
+**Parameters:**
+- `workflow_manager`: WorkflowManager instance
+- `session_stats`: SessionStats instance
+- `default_config`: Dictionary with `DEFAULT_STEPS`, `DEFAULT_WIDTH`, `DEFAULT_HEIGHT`
+
+**Returns Dictionary Keys (24 total):**
 
 **Settings:**
 - `steps_slider`, `width_slider`, `height_slider`
@@ -131,38 +168,58 @@ send_btn.click(fn=chat_handler, inputs=[chat_components['msg']], outputs=[chatbo
 **Img2Img:**
 - `input_image`, `denoise_slider`
 
-**Generation:**
-- `generate_btn`, `vram_warning_display`, `generation_progress`, `generation_status`, `generated_image`, `stats_display`
+**Workflow:**
+- `workflow_dropdown`, `workflow_refresh_btn`, `workflow_category_filter`, `workflow_info`, `workflow_upload_file`, `workflow_import_btn`, `workflow_export_btn`
 
-**Batch Queue:**
+**Statistics:**
+- `stats_display`
+
+**Usage:**
+```python
+from ui.components import create_generation_settings
+
+# Create the component
+gen_settings = create_generation_settings(
+    workflow_manager=workflow_manager,
+    session_stats=session_stats,
+    default_config={'DEFAULT_STEPS': 20, 'DEFAULT_WIDTH': 1024, 'DEFAULT_HEIGHT': 1024}
+)
+
+# Access individual components
+steps_slider = gen_settings['steps_slider']
+workflow_dropdown = gen_settings['workflow_dropdown']
+```
+
+**Integration:** Works with `WorkflowManager`, `SessionStats`, `SeedManager`, and `VRAMEstimator`.
+
+---
+
+### `queue_panel.py`
+
+**Purpose:** Provides batch generation queue management UI for processing multiple generation jobs sequentially.
+
+**Function:** `create_queue_panel() -> dict`
+
+**Parameters:** None
+
+**Returns Dictionary Keys (7 total):**
+
+**Queue Controls:**
 - `add_queue_btn`, `batch_variations_btn`, `variation_count`, `queue_status`, `process_queue_btn`, `clear_completed_btn`, `cancel_all_btn`
 
 **Usage:**
 ```python
-from ui.components import create_generation_panel
-from config import DEFAULT_STEPS, DEFAULT_WIDTH, DEFAULT_HEIGHT
+from ui.components import create_queue_panel
 
 # Create the component
-gen_components = create_generation_panel(
-    workflow_manager=workflow_manager,
-    prompt_history=prompt_history,
-    session_stats=session_stats,
-    default_config={
-        'DEFAULT_STEPS': DEFAULT_STEPS,
-        'DEFAULT_WIDTH': DEFAULT_WIDTH,
-        'DEFAULT_HEIGHT': DEFAULT_HEIGHT
-    }
-)
+queue = create_queue_panel()
 
 # Access individual components
-generate_btn = gen_components['generate_btn']
-prompt_display = gen_components['prompt_display']
-
-# Wire up event handlers
-generate_btn.click(fn=generate_image, inputs=[...], outputs=[...])
+add_queue_btn = queue['add_queue_btn']
+queue_status = queue['queue_status']
 ```
 
-**Integration:** Works with `WorkflowManager`, `PromptHistory`, `SessionStats`, `SeedManager`, and `VRAMEstimator`.
+**Integration:** Works with `GenerationQueue` from `core.generation_queue` for batch processing.
 
 ---
 
@@ -251,8 +308,12 @@ from .my_new_component import create_my_new_component
 __all__ = [
     "create_mode_selector",
     "create_chat_interface",
-    "create_generation_panel",
+    "create_generation_controls",
+    "create_generation_settings",
+    "create_queue_panel",
     "create_gallery_view",
+    "create_theme_settings",
+    "create_prompt_composer",
     "create_my_new_component",  # Add here
 ]
 ```
@@ -264,8 +325,12 @@ __all__ = [
 from .components import (
     create_chat_interface,
     create_gallery_view,
-    create_generation_panel,
+    create_generation_controls,
+    create_generation_settings,
+    create_queue_panel,
     create_mode_selector,
+    create_theme_settings,
+    create_prompt_composer,
     create_my_new_component,  # Add here
 )
 
