@@ -37,6 +37,35 @@ def populated_workflows_dir(tmp_path: Path) -> Path:
     return tmp_path
 
 
+@pytest.fixture
+def workflows_with_duplicate_names(tmp_path: Path) -> Path:
+    """Create workflows that share the same filename in different folders."""
+
+    configs = [
+        ("folder_one", "Shared Workflow A", "General"),
+        ("folder_two", "Shared Workflow B", "Custom"),
+    ]
+
+    for folder, name, category in configs:
+        target_dir = tmp_path / folder
+        target_dir.mkdir(parents=True)
+
+        data = {"nodes": [{"id": name}]}
+        workflow_file = target_dir / "shared.json"
+        workflow_file.write_text(json.dumps(data), encoding="utf-8")
+
+        metadata = {
+            "name": name,
+            "description": f"Workflow for {name}",
+            "category": category,
+            "tags": ["duplicate"],
+        }
+        meta_file = target_dir / "shared_meta.json"
+        meta_file.write_text(json.dumps(metadata), encoding="utf-8")
+
+    return tmp_path
+
+
 def test_workflow_manager_lists_categories_and_search(populated_workflows_dir: Path) -> None:
     manager = WorkflowManager(str(populated_workflows_dir))
 
@@ -65,6 +94,32 @@ def test_workflow_manager_delete_removes_files(populated_workflows_dir: Path) ->
     assert not workflow_path.exists()
     assert not metadata_path.exists()
     assert manager.get_workflow_count() == 1
+
+
+def test_workflow_manager_handles_duplicate_filenames(
+    workflows_with_duplicate_names: Path,
+) -> None:
+    manager = WorkflowManager(str(workflows_with_duplicate_names))
+
+    assert manager.get_workflow_count() == 2
+
+    paths = {entry["path"] for entry in manager.get_workflows_list()}
+    assert paths == {"folder_one/shared.json", "folder_two/shared.json"}
+
+    first = manager.get_workflow("folder_one/shared.json")
+    assert first is not None
+    assert first.metadata.name == "Shared Workflow A"
+
+    # Ambiguous lookup by filename should fail
+    assert manager.get_workflow("shared.json") is None
+
+    assert manager.set_current_workflow("folder_two/shared.json") is True
+    assert manager.get_current_workflow() is not None
+    assert manager.get_current_workflow().metadata.name == "Shared Workflow B"
+
+    assert manager.delete_workflow("folder_one/shared.json") is True
+    assert manager.get_workflow_count() == 1
+    assert manager.get_workflow("folder_two/shared.json") is not None
 
 
 def test_generate_image_accepts_text2image_category(
