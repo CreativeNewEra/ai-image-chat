@@ -42,6 +42,71 @@ from ui.components import (
 )
 from utils import pil_to_base64
 
+# Import handlers
+from handlers import (
+    # Mode handlers
+    handle_mode_change as _handle_mode_change,
+    toggle_auto_switch as _toggle_auto_switch,
+    # Gallery handlers
+    update_gallery_display as _update_gallery_display,
+    show_gallery_stats as _show_gallery_stats,
+    load_gallery_image as _load_gallery_image,
+    open_gallery as _open_gallery,
+    close_gallery as _close_gallery,
+    gallery_toggle_favorite as _gallery_toggle_favorite,
+    gallery_use_img2img as _gallery_use_img2img,
+    gallery_open_vision as _gallery_open_vision,
+    gallery_delete_image as _gallery_delete_image,
+    # Workflow handlers
+    get_workflow_info_display as _get_workflow_info_display,
+    switch_workflow as _switch_workflow,
+    refresh_workflows as _refresh_workflows,
+    filter_workflows_by_category as _filter_workflows_by_category,
+    import_workflow_from_file as _import_workflow_from_file,
+    export_current_workflow as _export_current_workflow,
+    # Chat handlers
+    user_message as _user_message,
+    bot_message as _bot_message,
+    vision_user_message as _vision_user_message,
+    vision_bot_message as _vision_bot_message,
+    load_selected_prompt as _load_selected_prompt,
+    search_and_update_dropdown as _search_and_update_dropdown,
+    refresh_history as _refresh_history,
+    export_history as _export_history,
+    import_history as _import_history,
+    # Generation handlers
+    apply_preset as _apply_preset,
+    update_warnings_from_sliders as _update_warnings_from_sliders,
+    use_last_seed as _use_last_seed,
+    adjust_seed as _adjust_seed,
+    random_seed as _random_seed,
+    toggle_seed_lock as _toggle_seed_lock,
+    select_from_history as _select_from_history,
+    update_seed_history as _update_seed_history,
+    generate_and_store as _generate_and_store,
+    start_seed_variations as _start_seed_variations,
+    refine_in_vision as _refine_in_vision,
+    toggle_favorite_generated as _toggle_favorite_generated,
+    copy_seed_to_clipboard as _copy_seed_to_clipboard,
+    # UI handlers
+    get_enhanced_progress_html as _get_enhanced_progress_html,
+    toggle_shortcuts as _toggle_shortcuts,
+    open_settings as _open_settings,
+    close_settings as _close_settings,
+    apply_theme as _apply_theme,
+    reset_theme as _reset_theme,
+    open_composer as _open_composer,
+    close_composer as _close_composer,
+    add_tag_to_composer as _add_tag_to_composer,
+    build_from_tags as _build_from_tags,
+    clear_all_tags as _clear_all_tags,
+    load_template_handler as _load_template_handler,
+    copy_to_main_prompt as _copy_to_main_prompt,
+    save_custom_template as _save_custom_template,
+    open_image_preview as _open_image_preview,
+    close_image_preview as _close_image_preview,
+)
+
 # Get logger for this module
 logger = logging.getLogger(__name__)
 
@@ -1477,205 +1542,41 @@ def create_app():
         # Workflow helper functions
         def get_workflow_info_display():
             """Get formatted workflow info for display"""
-            current = workflow_manager.get_current_workflow()
-            if not current:
-                return "No workflow selected"
-
-            info = f"**{current.metadata.name}**\n\n"
-            info += f"*{current.metadata.description}*\n\n"
-            info += f"**Category:** {current.metadata.category}\n"
-            info += f"**Tags:** {', '.join(current.metadata.tags) if current.metadata.tags else 'None'}\n"
-            info += f"**Author:** {current.metadata.author}\n"
-            return info
+            return _get_workflow_info_display(workflow_manager)
 
         def switch_workflow(workflow_name, category_filter):
             """Switch to selected workflow"""
-            # Find workflow by name
-            for filename, wf in workflow_manager.workflows.items():
-                if wf.metadata.name == workflow_name:
-                    success = workflow_manager.set_current_workflow(filename)
-                    if success:
-                        gr.Info(f"✅ Workflow loaded: {workflow_name}")
-                        return (
-                            gr.update(value=workflow_name),
-                            get_workflow_info_display(),
-                            f"✅ Switched to: {workflow_name}",
-                        )
-                    else:
-                        gr.Warning("Failed to switch workflow")
-                        return (
-                            gr.update(),
-                            get_workflow_info_display(),
-                            "❌ Failed to switch workflow",
-                        )
-
-            gr.Warning(f"Workflow not found: {workflow_name}")
-            return (
-                gr.update(),
-                get_workflow_info_display(),
-                f"⚠️ Workflow not found: {workflow_name}",
-            )
+            return _switch_workflow(workflow_name, category_filter, workflow_manager)
 
         def refresh_workflows(category_filter):
             """Refresh workflow list"""
-            workflow_manager.load_all_workflows()
-
-            # Get filtered workflows
-            if category_filter == "All":
-                workflows = workflow_manager.get_workflows_list()
-            else:
-                workflows = [
-                    {"name": wf.metadata.name, "category": wf.metadata.category}
-                    for wf in workflow_manager.get_workflows_by_category(category_filter)
-                ]
-
-            choices = [wf["name"] for wf in workflows]
-            current = workflow_manager.get_current_workflow()
-            current_name = current.metadata.name if current else None
-
-            return (
-                gr.update(choices=choices, value=current_name),
-                get_workflow_info_display(),
-                f"✅ Refreshed: {len(workflows)} workflows",
-            )
+            return _refresh_workflows(category_filter, workflow_manager)
 
         def filter_workflows_by_category(category):
             """Filter workflow dropdown by category"""
-            if category == "All":
-                workflows = workflow_manager.get_workflows_list()
-            else:
-                workflows = [
-                    {"name": wf.metadata.name}
-                    for wf in workflow_manager.get_workflows_by_category(category)
-                ]
-
-            choices = [wf["name"] for wf in workflows]
-            return gr.update(choices=choices)
+            return _filter_workflows_by_category(category, workflow_manager)
 
         def import_workflow_from_file(filepath):
             """Import workflow from uploaded file"""
-            if not filepath:
-                return get_workflow_info_display(), "⚠️ No file selected"
-
-            success = workflow_manager.import_workflow(filepath)
-            if success:
-                # Refresh dropdown
-                workflows = workflow_manager.get_workflows_list()
-                return (
-                    get_workflow_info_display(),
-                    "✅ Workflow imported successfully!",
-                    gr.update(choices=[wf["name"] for wf in workflows]),
-                )
-            else:
-                return (get_workflow_info_display(), "❌ Failed to import workflow", gr.update())
+            return _import_workflow_from_file(filepath, workflow_manager)
 
         def export_current_workflow():
             """Export current workflow"""
-            current = workflow_manager.get_current_workflow()
-            if not current:
-                return "⚠️ No workflow selected"
-
-            export_path = f"./exported_{current.filename}"
-            success = workflow_manager.export_workflow(current.filename, export_path)
-            if success:
-                return f"✅ Exported to: {export_path}"
-            else:
-                return "❌ Failed to export workflow"
+            return _export_current_workflow(workflow_manager)
 
         # Gallery helper functions
         def update_gallery_display(filter_text="", sort_by="newest", favorites_only=False):
             """Update gallery with filtering and sorting"""
-            images = gallery.get_images(filter_text, sort_by, favorites_only)
-            total = len(gallery.images)
-            shown = len(images)
-
-            if favorites_only:
-                info = f"Showing {shown} favorite images (out of {total} total)"
-            elif filter_text:
-                info = f"Showing {shown} images matching '{filter_text}' (out of {total} total)"
-            else:
-                info = f"Showing all {shown} images"
-
-            return images, info
+            return _update_gallery_display(filter_text, sort_by, favorites_only, gallery)
 
         def show_gallery_stats():
             """Show gallery statistics"""
-            stats = gallery.get_gallery_stats()
-            if stats["total"] == 0:
-                return "No images in gallery"
-
-            return f"📊 Gallery Stats\n\nTotal Images: {stats['total']}\n⭐ Favorites: {stats['favorites']}\n💾 Total Size: {stats['total_size_mb']} MB"
+            return _show_gallery_stats(gallery)
 
         # Mode switching - unified handler for radio button
         def handle_mode_change(mode_choice):
             """Handle mode change from radio button with visual indicators and UI visibility"""
-            logger.debug(f"Mode change requested: {mode_choice}")
-
-            # Get VRAM info
-            vram = vram_monitor.get_vram_usage()
-            vram_text = f"{vram['used_gb']} GB" if vram['available'] else "N/A"
-
-            if mode_choice == "🔵 Idle":
-                status = mode_manager.switch_to_idle()
-                gr.Info("⚡ Switched to Idle mode - VRAM freed")
-                banner = gr.update(
-                    value=f"🔵 **IDLE MODE** ({vram_text} VRAM)",
-                    elem_classes=["mode-status-banner", "mode-idle"]
-                )
-                tip = gr.update(
-                    value="💡 **Tip:** Choose Chat or Generate mode to start working",
-                    visible=True,
-                    elem_classes=["mode-tip", "mode-tip-idle"]
-                )
-                # Show only idle section
-                idle_vis = gr.update(visible=True)
-                chat_vis = gr.update(visible=False)
-                generate_vis = gr.update(visible=False)
-                current_mode = "IDLE"
-            elif mode_choice == "💬 Chat":
-                status = mode_manager.switch_to_chat()
-                gr.Info(f"💬 Chat mode activated - Model loading ({vram_text})")
-                banner = gr.update(
-                    value=f"🟢 **CHAT MODE** ({vram_text} VRAM)",
-                    elem_classes=["mode-status-banner", "mode-chat"]
-                )
-                tip = gr.update(
-                    value="💡 **Tip:** Develop prompts with Text Chat, or refine images with Vision Chat",
-                    visible=True,
-                    elem_classes=["mode-tip", "mode-tip-chat"]
-                )
-                # Show only chat section
-                idle_vis = gr.update(visible=False)
-                chat_vis = gr.update(visible=True)
-                generate_vis = gr.update(visible=False)
-                current_mode = "CHAT"
-            elif mode_choice == "🎨 Generate":
-                status = mode_manager.switch_to_generate()
-                gr.Info(f"🎨 Generate mode ready - ComfyUI active ({vram_text})")
-                banner = gr.update(
-                    value=f"🟠 **GENERATE MODE** ({vram_text} VRAM)",
-                    elem_classes=["mode-status-banner", "mode-generate"]
-                )
-                tip = gr.update(
-                    value="💡 **Tip:** Click generated images in Gallery to refine them with Vision Chat",
-                    visible=True,
-                    elem_classes=["mode-tip", "mode-tip-generate"]
-                )
-                # Show only generate section
-                idle_vis = gr.update(visible=False)
-                chat_vis = gr.update(visible=False)
-                generate_vis = gr.update(visible=True)
-                current_mode = "GENERATE"
-            else:
-                status = "Unknown mode selected"
-                banner = gr.update()
-                tip = gr.update()
-                idle_vis = gr.update()
-                chat_vis = gr.update()
-                generate_vis = gr.update()
-                current_mode = "IDLE"
-
-            return status, gr.update(value="", visible=False), banner, tip, idle_vis, chat_vis, generate_vis, current_mode
+            return _handle_mode_change(mode_choice, mode_manager, vram_monitor)
 
         # Wire up mode radio button
         mode_radio.change(
@@ -1691,97 +1592,20 @@ def create_app():
         )
 
         def get_enhanced_progress_html(message="Generating image...", estimated_time=None):
-            """Create enhanced progress bar HTML with animation and estimated time"""
-            time_display = ""
-            if estimated_time:
-                time_display = f'<div class="progress-time">~{estimated_time}s remaining</div>'
-
-            return f"""
-            <div class="generation-progress-enhanced">
-                <div class="progress-info">
-                    <span class="progress-label">{message}</span>
-                    {time_display}
-                </div>
-                <div class="progress-container">
-                    <div class="progress-bar animated" style="width: 100%;"></div>
-                </div>
-            </div>
-            """
+            """Create enhanced progress bar HTML"""
+            return _get_enhanced_progress_html(message, estimated_time)
 
         # Chat functions
         def user_message(message, history):
-            # Gradio 5 messages format: {"role": "user/assistant", "content": "..."}
-            return "", history + [{"role": "user", "content": message}]
+            """Add user message to chat history"""
+            return _user_message(message, history)
 
         def bot_message(history, model, current_prompt):
-            # Gradio 5 messages format
-            if not history or not history[-1].get("content"):
-                return history, current_prompt, gr.update(value="", visible=False), hide_toast(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-
-            # Auto-switch to CHAT mode if needed
-            toast_update = hide_toast()
-            banner_update = gr.update()
-            tip_update = gr.update()
-            idle_vis = gr.update()
-            chat_vis = gr.update()
-            generate_vis = gr.update()
-            mode_state = gr.update()
-
-            if mode_manager.get_mode() != Mode.CHAT:
-                mode_manager.switch_to_chat()
-                vram = vram_monitor.get_vram_usage()
-                vram_text = f"{vram['used_gb']} GB" if vram['available'] else "N/A"
-
-                toast_update = show_toast("🟢 Switching to Chat Mode...", "success")
-                banner_update = gr.update(
-                    value=f"🟢 **CHAT MODE** ({vram_text} VRAM)",
-                    elem_classes=["mode-status-banner", "mode-chat"]
-                )
-                tip_update = gr.update(
-                    value="💡 **Tip:** Develop prompts with Text Chat, or refine images with Vision Chat",
-                    visible=True,
-                    elem_classes=["mode-tip", "mode-tip-chat"]
-                )
-                # Update UI visibility
-                idle_vis = gr.update(visible=False)
-                chat_vis = gr.update(visible=True)
-                generate_vis = gr.update(visible=False)
-                mode_state = "CHAT"
-
-            message = history[-1]["content"]
-            response = chat_with_ollama(message, history[:-1], model, current_prompt)
-            # Update last message to include assistant response
-            history[-1] = {"role": "user", "content": message}
-            history.append({"role": "assistant", "content": response})
-
-            # Try to extract prompt from response
-            new_prompt = current_prompt
-            prompt_extracted = False
-            if len(response) > 30:
-                # If response looks like a prompt (has quotes or is descriptive)
-                if '"' in response:
-                    import re
-
-                    matches = re.findall(r'"([^"]*)"', response)
-                    if matches and len(matches[-1]) > 30:
-                        new_prompt = matches[-1]
-                        prompt_extracted = True
-                elif len(response) > 50 and response.count(",") > 2:
-                    # Looks like a detailed prompt
-                    new_prompt = response
-                    prompt_extracted = True
-
-            # Check for smart switch suggestion
-            suggestion_update = gr.update(value="", visible=False)
-            if prompt_extracted:
-                suggested = smart_switch.should_suggest_switch(
-                    "prompt_extracted", mode_manager.get_mode()
-                )
-                if suggested:
-                    suggestion_msg = smart_switch.get_suggestion_message(suggested)
-                    suggestion_update = gr.update(value=suggestion_msg, visible=True)
-
-            return history, new_prompt, suggestion_update, toast_update, banner_update, tip_update, idle_vis, chat_vis, generate_vis, mode_state
+            """Process user message and generate bot response in text chat"""
+            return _bot_message(
+                history, model, current_prompt, mode_manager, vram_monitor,
+                smart_switch, chat_with_ollama, show_toast, hide_toast
+            )
 
         # Wire up chat
         msg.submit(user_message, [msg, chatbot], [msg, chatbot]).then(
@@ -1802,35 +1626,12 @@ def create_app():
 
         # Vision chat functions
         def vision_user_message(message, history):
-            # Gradio 5 messages format
-            return "", history + [{"role": "user", "content": message}]
+            """Add user message to vision chat history"""
+            return _vision_user_message(message, history)
 
         def vision_bot_message(history, current_image, current_prompt):
-            # Gradio 5 messages format
-            if not history or not history[-1].get("content"):
-                return history, current_prompt
-
-            message = history[-1]["content"]
-            response = vision_chat_with_ollama(message, history[:-1], current_image, current_prompt)
-            # Update last message to include assistant response
-            history[-1] = {"role": "user", "content": message}
-            history.append({"role": "assistant", "content": response})
-
-            # Try to extract prompt from response
-            new_prompt = current_prompt
-            if len(response) > 30:
-                # If response looks like a prompt (has quotes or is descriptive)
-                if '"' in response:
-                    import re
-
-                    matches = re.findall(r'"([^"]*)"', response)
-                    if matches and len(matches[-1]) > 30:
-                        new_prompt = matches[-1]
-                elif len(response) > 50 and response.count(",") > 2:
-                    # Looks like a detailed prompt
-                    new_prompt = response
-
-            return history, new_prompt
+            """Process user message and generate bot response in vision chat"""
+            return _vision_bot_message(history, current_image, current_prompt, vision_chat_with_ollama)
 
         # Wire up vision chat
         vision_msg.submit(
@@ -1862,20 +1663,8 @@ def create_app():
         prompt_display.change(lambda x: x, [prompt_display], [current_prompt_state])
 
         def extract_from_chat(history):
-            if not history:
-                return "No chat history to extract from!", hide_toast()
-
-            # Get last assistant message
-            for h in reversed(history):
-                if h[1] and len(h[1]) > 30:
-                    # Auto-switch to GENERATE mode when extracting prompt
-                    if mode_manager.get_mode() != Mode.GENERATE:
-                        mode_manager.switch_to_generate()
-                        toast = show_toast("✅ Prompt copied and ready to generate!", "success")
-                        return h[1], toast
-                    return h[1], hide_toast()
-
-            return "No suitable prompt found in chat history", hide_toast()
+            """Extract prompt from chat history"""
+            return _extract_from_chat(history, mode_manager, show_toast, hide_toast)
 
         extract_prompt_btn.click(extract_from_chat, [chatbot], [prompt_display, toast_notification])
 
@@ -1894,44 +1683,23 @@ def create_app():
         # Prompt History Handlers
         def load_selected_prompt(selected):
             """Load selected prompt from history"""
-            if not selected:
-                return ""
-            full_prompt = prompt_history.get_prompt_by_display_text(selected)
-            return full_prompt
+            return _load_selected_prompt(selected, prompt_history)
 
         def search_and_update_dropdown(query):
             """Search prompts and update dropdown"""
-            if not query:
-                choices = prompt_history.get_dropdown_choices()
-            else:
-                results = prompt_history.search_prompts(query)
-                choices = []
-                for entry in results[:10]:
-                    prompt = entry["prompt"]
-                    if len(prompt) > 60:
-                        prompt = prompt[:60] + "..."
-                    use_info = f" ({entry['use_count']}x)" if entry.get("use_count", 1) > 1 else ""
-                    choices.append(f"{prompt}{use_info}")
-
-            return gr.update(choices=choices)
+            return _search_and_update_dropdown(query, prompt_history)
 
         def refresh_history():
             """Refresh prompt history dropdown"""
-            return gr.update(choices=prompt_history.get_dropdown_choices())
+            return _refresh_history(prompt_history)
 
         def export_history():
             """Export prompt history"""
-            msg = prompt_history.export_prompts()
-            return msg, gr.update(visible=True)
+            return _export_history(prompt_history)
 
         def import_history(filepath):
             """Import prompt history from file"""
-            if not filepath:
-                return "❌ No file selected", gr.update(visible=True), gr.update()
-
-            msg = prompt_history.import_prompts(filepath)
-            choices = prompt_history.get_dropdown_choices()
-            return msg, gr.update(visible=True), gr.update(choices=choices)
+            return _import_history(filepath, prompt_history)
 
         load_prompt_btn.click(load_selected_prompt, [prompt_history_dropdown], [prompt_display])
 
@@ -1949,8 +1717,8 @@ def create_app():
 
         # Preset buttons
         def apply_preset(preset_name):
-            preset = PRESETS.get(preset_name, PRESETS["Balanced"])
-            return preset["width"], preset["height"], preset["steps"]
+            """Apply generation preset"""
+            return _apply_preset(preset_name)
 
         preset_fast.click(
             lambda: apply_preset("Fast Draft"), None, [width_slider, height_slider, steps_slider]
@@ -1970,8 +1738,8 @@ def create_app():
 
         # Update warnings when sliders change
         def update_warnings_from_sliders(steps, width, height):
-            warning_text, warning_visible = check_vram_warnings(steps, width, height)
-            return gr.update(value=warning_text, visible=warning_visible)
+            """Update VRAM warnings based on slider values"""
+            return _update_warnings_from_sliders(steps, width, height, check_vram_warnings)
 
         steps_slider.change(
             update_warnings_from_sliders,
@@ -1993,60 +1761,28 @@ def create_app():
 
         # Seed management functions
         def use_last_seed():
-            last = gallery.get_last_seed()
-            if last is not None:
-                return str(last)
-            return ""
+            """Use last seed from gallery"""
+            return _use_last_seed(gallery)
 
         def adjust_seed(current_seed, adjustment):
             """Adjust seed by specified amount"""
-            try:
-                if current_seed and current_seed.strip():
-                    seed_val = int(current_seed)
-                else:
-                    seed_val = gallery.get_last_seed()
-                    if seed_val is None:
-                        import random
-
-                        seed_val = random.randint(0, 2**32 - 1)
-
-                new_seed = max(0, seed_val + adjustment)
-                return str(new_seed)
-            except:
-                return current_seed
+            return _adjust_seed(current_seed, adjustment, gallery)
 
         def random_seed():
             """Generate random seed"""
-            import random
-
-            return str(random.randint(0, 2**32 - 1))
+            return _random_seed()
 
         def toggle_seed_lock(is_locked, current_seed):
             """Toggle seed lock"""
-            if is_locked:
-                # Lock the seed
-                try:
-                    seed_val = int(current_seed) if current_seed else None
-                    if seed_val is not None:
-                        seed_manager.lock_seed(seed_val)
-                    return is_locked
-                except:
-                    return False
-            else:
-                # Unlock the seed
-                seed_manager.unlock_seed()
-                return is_locked
+            return _toggle_seed_lock(is_locked, current_seed, seed_manager)
 
         def select_from_history(selected_seed):
             """Load seed from history"""
-            if selected_seed:
-                return str(selected_seed)
-            return ""
+            return _select_from_history(selected_seed)
 
         def update_seed_history():
             """Update seed history dropdown"""
-            history = seed_manager.get_history()
-            return gr.update(choices=history)
+            return _update_seed_history(seed_manager)
 
         # Wire up seed management buttons
         use_last_seed_btn.click(use_last_seed, None, seed_input)
@@ -2070,102 +1806,11 @@ def create_app():
         # Generation
         def generate_and_store(prompt_text, steps, width, height, seed_value, denoise, input_img):
             """Generate image and store in state and gallery"""
-            # Auto-switch to GENERATE mode if needed
-            toast_update = hide_toast()
-            banner_update = gr.update()
-            tip_update = gr.update()
-            idle_vis = gr.update()
-            chat_vis = gr.update()
-            generate_vis = gr.update()
-            mode_state = gr.update()
-
-            if mode_manager.get_mode() != Mode.GENERATE:
-                mode_manager.switch_to_generate()
-                vram = vram_monitor.get_vram_usage()
-                vram_text = f"{vram['used_gb']} GB" if vram['available'] else "N/A"
-
-                toast_update = show_toast("🟠 Switching to Generate Mode...", "warning")
-                banner_update = gr.update(
-                    value=f"🟠 **GENERATE MODE** ({vram_text} VRAM)",
-                    elem_classes=["mode-status-banner", "mode-generate"]
-                )
-                tip_update = gr.update(
-                    value="💡 **Tip:** Click generated images in Gallery to refine them with Vision Chat",
-                    visible=True,
-                    elem_classes=["mode-tip", "mode-tip-generate"]
-                )
-                # Update UI visibility
-                idle_vis = gr.update(visible=False)
-                chat_vis = gr.update(visible=False)
-                generate_vis = gr.update(visible=True)
-                mode_state = "GENERATE"
-
-            # Show enhanced progress bar with estimated time
-            stats = session_stats.get_stats()
-            avg_time = stats.get("avg_time", 0)
-            estimated_time = round(avg_time) if avg_time > 0 else None
-            progress_html = get_enhanced_progress_html(
-                message="🎨 Generating image...",
-                estimated_time=estimated_time
+            return _generate_and_store(
+                prompt_text, steps, width, height, seed_value, denoise, input_img,
+                mode_manager, vram_monitor, session_stats, smart_switch, seed_manager,
+                gallery, generate_image, get_enhanced_progress_html, show_toast, hide_toast
             )
-
-            yield (
-                None,  # image
-                "🎨 Generating image...",  # status
-                None,  # current_image_state
-                gr.update(),  # gallery
-                gr.update(),  # gallery_info
-                gr.update(),  # stats
-                gr.update(value="", visible=False),  # smart_suggestion
-                gr.update(),  # seed_history
-                gr.update(value=progress_html, visible=True),  # progress
-                toast_update,  # toast_notification
-                banner_update,  # mode_status_banner
-                tip_update,  # mode_tip
-                idle_vis,  # idle_section
-                chat_vis,  # chat_section
-                generate_vis,  # generate_section
-                mode_state,  # current_mode_state
-            )
-
-            image, status, actual_seed, stats = generate_image(
-                prompt_text,
-                steps,
-                width,
-                height,
-                seed_value,
-                denoise=denoise,
-                input_image_path=input_img,
-            )
-
-            # Update gallery display
-            gallery_images = gallery.get_images()
-            gallery_count = len(gallery_images)
-            info = (
-                f"Generated {gallery_count} image{'s' if gallery_count != 1 else ''} this session"
-            )
-
-            if actual_seed is not None:
-                info += f" | Last seed: {actual_seed}"
-
-            # Check for smart switch suggestion
-            suggestion_update = gr.update(value="", visible=False)
-            if image is not None:
-                suggested = smart_switch.should_suggest_switch(
-                    "image_generated", mode_manager.get_mode()
-                )
-                if suggested:
-                    suggestion_msg = smart_switch.get_suggestion_message(suggested)
-                    suggestion_update = gr.update(value=suggestion_msg, visible=True)
-
-            # Update seed history dropdown
-            seed_history_update = gr.update(choices=seed_manager.get_history())
-
-            # Hide progress bar and toast
-            progress_update = gr.update(value="", visible=False)
-            final_toast = hide_toast()
-
-            yield image, status, image, gallery_images, info, stats, suggestion_update, seed_history_update, progress_update, final_toast, banner_update, tip_update, idle_vis, chat_vis, generate_vis, mode_state
 
         generate_btn.click(
             generate_and_store,
@@ -2246,47 +1891,7 @@ def create_app():
         # Gallery click to load image into vision chat
         def load_gallery_image(evt: gr.SelectData):
             """Load clicked gallery image into vision chat, close modal, and switch to Vision Chat tab"""
-            index = evt.index
-            img_data = gallery.get_image_by_index(index)
-
-            if img_data:
-                image = img_data["image"]
-                prompt = img_data["prompt"]
-                seed = img_data["seed"]
-                settings = img_data["settings"]
-
-                info_text = f"Loaded image from gallery\nPrompt: {prompt[:100]}...\nSeed: {seed}\nSettings: {settings['width']}x{settings['height']}, {settings['steps']} steps"
-
-                # Auto-switch to Chat mode if needed
-                mode_status_msg = mode_status.value
-                mode_radio_value = mode_radio.value
-                toast_update = hide_toast()
-
-                if mode_manager.get_mode() != Mode.CHAT:
-                    mode_manager.switch_to_chat(preload_model=OLLAMA_VISION_MODEL)
-                    mode_status_msg = mode_manager._get_status_message()
-                    mode_radio_value = "💬 Chat"
-                    toast_update = show_toast("✅ Image loaded - Vision Chat ready!", "success")
-
-                # Switch to Vision Chat tab (index 1 = second tab)
-                tab_update = gr.update(selected=1)
-
-                # Close the gallery accordion
-                modal_update = gr.update(visible=False, open=False)
-
-                return (
-                    image,  # current_image_state
-                    info_text,  # gallery_info
-                    image,  # vision_image_preview
-                    mode_status_msg,  # mode_status
-                    mode_radio_value,  # mode_radio
-                    tab_update,  # chat_tabs
-                    toast_update,  # toast_notification
-                    modal_update,  # gallery_modal
-                    index,  # selected_gallery_index
-                )
-
-            return None, "Failed to load image", None, gr.update(), gr.update(), gr.update(), hide_toast(), gr.update(), -1
+            return _load_gallery_image(evt, gallery, mode_manager, show_toast, hide_toast)
 
         session_gallery.select(
             load_gallery_image,
@@ -2313,18 +1918,19 @@ def create_app():
         shortcuts_state = gr.State(False)
 
         def toggle_shortcuts(current_state):
-            return not current_state, gr.update(visible=not current_state, open=not current_state)
+            """Toggle keyboard shortcuts help"""
+            return _toggle_shortcuts(current_state)
 
         shortcuts_btn.click(toggle_shortcuts, [shortcuts_state], [shortcuts_state, shortcuts_help])
 
         # Gallery accordion handlers
         def open_gallery():
             """Open the gallery accordion"""
-            return gr.update(visible=True, open=True)
+            return _open_gallery()
 
         def close_gallery():
             """Close the gallery accordion"""
-            return gr.update(visible=False, open=False)
+            return _close_gallery()
 
         gallery_btn.click(open_gallery, None, gallery_modal)
         close_gallery_btn.click(close_gallery, None, gallery_modal)
@@ -2332,35 +1938,19 @@ def create_app():
         # Theme Settings accordion handlers
         def open_settings():
             """Open the theme settings accordion"""
-            return gr.update(visible=True, open=True)
+            return _open_settings()
 
         def close_settings():
             """Close the theme settings accordion"""
-            return gr.update(visible=False, open=False)
+            return _close_settings()
 
         def apply_theme(mode, scheme, density):
             """Apply theme settings"""
-            # Map color scheme display name to ID
-            scheme_map = {info["name"]: key for key, info in theme_manager.COLOR_SCHEMES.items()}
-            scheme_id = scheme_map.get(scheme, "default")
-
-            theme_manager.set_mode(mode)
-            theme_manager.set_color_scheme(scheme_id)
-            theme_manager.set_layout_density(density)
-
-            gr.Info(f"✨ Theme applied: {scheme} ({mode} mode, {density} density)")
-            return theme_manager.get_theme_display()
+            return _apply_theme(mode, scheme, density, theme_manager)
 
         def reset_theme():
             """Reset theme to defaults"""
-            theme_manager.reset_to_defaults()
-            gr.Info("🔄 Theme reset to defaults")
-            return (
-                theme_manager.get_mode(),
-                theme_manager.COLOR_SCHEMES[theme_manager.get_color_scheme()]["name"],
-                theme_manager.get_layout_density(),
-                theme_manager.get_theme_display(),
-            )
+            return _reset_theme(theme_manager)
 
         settings_btn.click(open_settings, None, settings_modal)
         close_settings_btn.click(close_settings, None, settings_modal)
@@ -2379,8 +1969,8 @@ def create_app():
 
         # Auto-switch toggle
         def toggle_auto_switch(enabled):
-            smart_switch.auto_switch_enabled = enabled
-            return enabled
+            """Toggle auto-switch functionality"""
+            return _toggle_auto_switch(enabled, smart_switch)
 
         auto_switch_checkbox.change(toggle_auto_switch, [auto_switch_checkbox], None)
 
@@ -2391,11 +1981,11 @@ def create_app():
         # Open/close composer
         def open_composer():
             """Open the prompt composer accordion"""
-            return gr.update(visible=True, open=True)
+            return _open_composer()
 
         def close_composer():
             """Close the prompt composer accordion"""
-            return gr.update(visible=False, open=False)
+            return _close_composer()
 
         composer_btn.click(open_composer, None, composer_modal)
         close_composer_btn.click(close_composer, None, composer_modal)
@@ -2403,13 +1993,7 @@ def create_app():
         # Tag button clicks - universal handler
         def add_tag_to_composer(tag_name):
             """Add a tag to the composer"""
-            # Find the tag object
-            for category_tags in prompt_composer.TAG_LIBRARY.values():
-                for tag in category_tags:
-                    if tag.name == tag_name:
-                        prompt_composer.add_tag(tag)
-                        break
-            return prompt_composer.get_selected_tags_display()
+            return _add_tag_to_composer(tag_name, prompt_composer)
 
         # Wire up all tag buttons
         for tag_name, (btn, tag) in tag_buttons.items():
@@ -2422,36 +2006,21 @@ def create_app():
         # Build prompt from tags
         def build_from_tags():
             """Build prompt from selected tags"""
-            prompt = prompt_composer.build_prompt()
-            gr.Info("✨ Prompt built from tags!")
-            return prompt
+            return _build_from_tags(prompt_composer)
 
         build_prompt_btn.click(build_from_tags, None, built_prompt)
 
         # Clear all tags
         def clear_all_tags():
             """Clear all selected tags"""
-            prompt_composer.clear_tags()
-            gr.Info("🗑️ All tags cleared")
-            return prompt_composer.get_selected_tags_display(), ""
+            return _clear_all_tags(prompt_composer)
 
         clear_tags_btn.click(clear_all_tags, None, [selected_tags_display, built_prompt])
 
         # Load template
         def load_template_handler(template_name):
             """Load a template"""
-            if not template_name:
-                return "", ""
-
-            # Find template by name (template_name includes description)
-            template_name_only = template_name.split(" - ")[0]
-            for template in prompt_composer.get_all_templates():
-                if template.name == template_name_only:
-                    prompt = prompt_composer.load_template(template)
-                    gr.Info(f"📥 Loaded template: {template.name}")
-                    return prompt_composer.get_selected_tags_display(), prompt
-
-            return "", ""
+            return _load_template_handler(template_name, prompt_composer)
 
         load_template_btn.click(
             load_template_handler,
@@ -2462,27 +2031,14 @@ def create_app():
         # Copy built prompt to main prompt editor
         def copy_to_main_prompt(built):
             """Copy built prompt to main prompt editor"""
-            if built:
-                gr.Info("➡️ Prompt copied to editor!")
-                return built
-            return ""
+            return _copy_to_main_prompt(built)
 
         copy_to_prompt_btn.click(copy_to_main_prompt, [built_prompt], prompt_display)
 
         # Save custom template
         def save_custom_template(name, desc, category):
             """Save current composition as template"""
-            if not name:
-                gr.Warning("Please enter a template name")
-                return gr.update(value="⚠️ Please enter a template name", visible=True)
-
-            try:
-                prompt_composer.save_as_template(name, desc, category)
-                gr.Info(f"💾 Saved template: {name}")
-                return gr.update(value=f"✅ Template saved: {name}", visible=True)
-            except Exception as e:
-                gr.Error(f"Failed to save template: {e}")
-                return gr.update(value=f"❌ Error: {e}", visible=True)
+            return _save_custom_template(name, desc, category, prompt_composer)
 
         save_template_btn.click(
             save_custom_template,
@@ -2563,129 +2119,19 @@ def create_app():
         # Generated image action buttons
         def start_seed_variations(prompt, steps, width, height):
             """Generate 4 seed variations of current image"""
-            current_seed = gallery.get_last_seed()
-            if current_seed is None:
-                return show_toast("⚠️ No seed available for variations", "error"), gr.update()
-
-            # Get current prompt
-            current_prompt = prompt or "No prompt"
-
-            # Add 4 variations to queue
-            gen_queue.add_job(
-                prompt=current_prompt,
-                seed=current_seed + 1,
-                steps=steps,
-                width=width,
-                height=height
-            )
-            gen_queue.add_job(
-                prompt=current_prompt,
-                seed=current_seed + 10,
-                steps=steps,
-                width=width,
-                height=height
-            )
-            gen_queue.add_job(
-                prompt=current_prompt,
-                seed=current_seed + 100,
-                steps=steps,
-                width=width,
-                height=height
-            )
-            gen_queue.add_job(
-                prompt=current_prompt,
-                seed=current_seed + 1000,
-                steps=steps,
-                width=width,
-                height=height
-            )
-
-            toast_msg = show_toast(f"✅ Added 4 seed variations to queue (base: {current_seed})", "success")
-            queue_msg = gen_queue.get_status()
-            return toast_msg, queue_msg
+            return _start_seed_variations(prompt, steps, width, height, gallery, gen_queue, show_toast)
 
         def refine_in_vision(image):
             """Load current image into Vision Chat"""
-            if image is None:
-                return (
-                    gr.update(),  # vision_image_preview
-                    gr.update(),  # gallery_info
-                    gr.update(),  # mode_radio
-                    gr.update(),  # mode_status
-                    gr.update(),  # chat_tabs
-                    show_toast("⚠️ No image to refine", "error"),  # toast
-                    gr.update(),  # mode_status_banner
-                    gr.update(),  # mode_tip
-                )
-
-            # Switch to Chat mode and Vision Chat tab if needed
-            mode_status_msg = mode_manager._get_status_message()
-            mode_radio_value = "💬 Chat"
-            tab_update = gr.update(selected=1)  # Vision Chat tab
-            toast_update = show_toast("👁️ Opening in Vision Chat...", "success")
-
-            # Get VRAM info
-            vram = vram_monitor.get_vram_usage()
-            vram_text = f"{vram['used_gb']} GB" if vram['available'] else "N/A"
-
-            if mode_manager.get_mode() != Mode.CHAT:
-                mode_manager.switch_to_chat(preload_model=OLLAMA_VISION_MODEL)
-                mode_status_msg = mode_manager._get_status_message()
-                banner_update = gr.update(
-                    value=f"🟢 **CHAT MODE** ({vram_text} VRAM)",
-                    elem_classes=["mode-status-banner", "mode-chat"]
-                )
-                tip_update = gr.update(
-                    value="💡 **Tip:** Use Vision Chat to refine this image with AI guidance",
-                    visible=True,
-                    elem_classes=["mode-tip", "mode-tip-chat"]
-                )
-            else:
-                banner_update = gr.update()
-                tip_update = gr.update()
-
-            # Get image info for gallery
-            if len(gallery.images) > 0:
-                last_image = gallery.images[-1]
-                info_text = f"Loaded into Vision Chat: {last_image.get('prompt', 'Unknown')[:50]}..."
-            else:
-                info_text = "Image loaded"
-
-            return (
-                image,  # vision_image_preview
-                info_text,  # gallery_info
-                mode_radio_value,  # mode_radio
-                mode_status_msg,  # mode_status
-                tab_update,  # chat_tabs
-                toast_update,  # toast
-                banner_update,  # mode_status_banner
-                tip_update,  # mode_tip
-            )
+            return _refine_in_vision(image, mode_manager, vram_monitor, gallery, show_toast)
 
         def toggle_favorite_generated():
             """Toggle favorite status of last generated image"""
-            last_meta = gallery.get_last_image_metadata()
-            if not last_meta:
-                return show_toast("⚠️ No image to favorite", "error")
-
-            # Get the last image path
-            images = gallery.get_images()
-            if not images:
-                return show_toast("⚠️ No images in gallery", "error")
-
-            last_image_path = images[0][0]  # First image (newest) path
-            is_fav = gallery.toggle_favorite(last_image_path)
-
-            icon = "⭐" if is_fav else "☆"
-            status = "added to" if is_fav else "removed from"
-            return show_toast(f"{icon} Image {status} favorites", "success")
+            return _toggle_favorite_generated(gallery, show_toast)
 
         def copy_seed_to_clipboard():
             """Copy current seed to clipboard"""
-            current_seed = seed_manager.get_last_seed()
-            if current_seed is None:
-                return show_toast("⚠️ No seed available", "error")
-            return show_toast(f"📋 Seed {current_seed} copied!", "success")
+            return _copy_seed_to_clipboard(seed_manager, show_toast)
 
         # Wire up generated image action buttons
         gen_variations_btn.click(
@@ -2712,42 +2158,11 @@ def create_app():
         # Image preview modal handlers
         def open_image_preview(image):
             """Open full-size preview of generated image"""
-            if image is None:
-                return gr.update(visible=False), gr.update(), gr.update()
-
-            # Get metadata
-            last_meta = gallery.get_last_image_metadata()
-            if last_meta:
-                meta_display = f"""
-                <div class="metadata-row">
-                    <span class="metadata-label">Prompt:</span>
-                    <span class="metadata-value">{last_meta.get('prompt', 'N/A')}</span>
-                </div>
-                <div class="metadata-row">
-                    <span class="metadata-label">Seed:</span>
-                    <span class="metadata-value">{last_meta.get('seed', 'N/A')}</span>
-                </div>
-                <div class="metadata-row">
-                    <span class="metadata-label">Dimensions:</span>
-                    <span class="metadata-value">{last_meta.get('width', 'N/A')} × {last_meta.get('height', 'N/A')}</span>
-                </div>
-                <div class="metadata-row">
-                    <span class="metadata-label">Steps:</span>
-                    <span class="metadata-value">{last_meta.get('steps', 'N/A')}</span>
-                </div>
-                """
-            else:
-                meta_display = "No metadata available"
-
-            return (
-                gr.update(visible=True, open=True),  # accordion
-                image,  # preview_image
-                meta_display,  # preview_metadata
-            )
+            return _open_image_preview(image, gallery)
 
         def close_image_preview():
             """Close image preview accordion"""
-            return gr.update(visible=False, open=False)
+            return _close_image_preview()
 
         # Click on generated image opens preview
         generated_image.select(
@@ -2772,105 +2187,19 @@ def create_app():
         # Gallery action button handlers
         def gallery_toggle_favorite(index):
             """Toggle favorite status of selected gallery image"""
-            if index < 0:
-                return show_toast("⚠️ Please select an image first", "error"), gr.update(), gr.update()
-
-            images = gallery.get_images()
-            if index >= len(images):
-                return show_toast("⚠️ Image not found", "error"), gr.update(), gr.update()
-
-            image_path = images[index][0]  # Get path from tuple
-            is_fav = gallery.toggle_favorite(image_path)
-
-            # Update gallery display
-            gallery_images, info = update_gallery_display("", "newest", False)
-
-            icon = "⭐" if is_fav else "☆"
-            status = "added to" if is_fav else "removed from"
-            return show_toast(f"{icon} Image {status} favorites", "success"), gallery_images, info
+            return _gallery_toggle_favorite(index, gallery, show_toast, update_gallery_display)
 
         def gallery_use_img2img(index):
             """Load selected gallery image into img2img input"""
-            if index < 0:
-                return show_toast("⚠️ Please select an image first", "error"), gr.update()
-
-            img_data = gallery.get_image_by_index(index)
-            if not img_data:
-                return show_toast("⚠️ Image not found", "error"), gr.update()
-
-            return show_toast("🎨 Image loaded for img2img", "success"), img_data["image"]
+            return _gallery_use_img2img(index, gallery, show_toast)
 
         def gallery_open_vision(index):
             """Load selected gallery image into Vision Chat"""
-            if index < 0:
-                return (
-                    show_toast("⚠️ Please select an image first", "error"),
-                    gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-                )
-
-            img_data = gallery.get_image_by_index(index)
-            if not img_data:
-                return (
-                    show_toast("⚠️ Image not found", "error"),
-                    gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
-                )
-
-            # Switch to Chat mode and Vision Chat tab if needed
-            mode_status_msg = mode_manager._get_status_message()
-            mode_radio_value = "💬 Chat"
-            tab_update = gr.update(selected=1)
-            toast_update = show_toast("👁️ Opening in Vision Chat...", "success")
-
-            # Get VRAM info
-            vram = vram_monitor.get_vram_usage()
-            vram_text = f"{vram['used_gb']} GB" if vram['available'] else "N/A"
-
-            if mode_manager.get_mode() != Mode.CHAT:
-                mode_manager.switch_to_chat(preload_model=OLLAMA_VISION_MODEL)
-                mode_status_msg = mode_manager._get_status_message()
-                banner_update = gr.update(
-                    value=f"🟢 **CHAT MODE** ({vram_text} VRAM)",
-                    elem_classes=["mode-status-banner", "mode-chat"]
-                )
-                tip_update = gr.update(
-                    value="💡 **Tip:** Use Vision Chat to refine this image with AI guidance",
-                    visible=True,
-                    elem_classes=["mode-tip", "mode-tip-chat"]
-                )
-            else:
-                banner_update = gr.update()
-                tip_update = gr.update()
-
-            # Close gallery accordion
-            modal_update = gr.update(visible=False, open=False)
-
-            return (
-                toast_update,  # toast
-                img_data["image"],  # vision_image_preview
-                mode_radio_value,  # mode_radio
-                mode_status_msg,  # mode_status
-                tab_update,  # chat_tabs
-                modal_update,  # gallery_modal
-                banner_update,  # mode_status_banner
-                tip_update,  # mode_tip
-            )
+            return _gallery_open_vision(index, gallery, mode_manager, vram_monitor, show_toast)
 
         def gallery_delete_image(index):
             """Delete selected gallery image"""
-            if index < 0:
-                return show_toast("⚠️ Please select an image first", "error"), gr.update(), gr.update()
-
-            images = gallery.get_images()
-            if index >= len(images):
-                return show_toast("⚠️ Image not found", "error"), gr.update(), gr.update()
-
-            image_path = images[index][0]
-            gallery.delete_image(image_path)
-
-            # Update gallery display
-            gallery_images, info = update_gallery_display("", "newest", False)
-
-            return show_toast("🗑️ Image deleted", "success"), gallery_images, info
+            return _gallery_delete_image(index, gallery, show_toast, update_gallery_display)
 
         # Wire up gallery action buttons
         gallery_favorite_btn.click(

@@ -108,19 +108,28 @@ pytest -m "not slow"           # Exclude slow tests
 
 ### Core Components
 
-**`app.py`** (~2,500 lines, 90KB)
+**`app.py`** (~2,200 lines, 75KB)
 - Main Gradio application entry point
-- Event handler wiring and business logic
-- Ollama chat integration functions
-- Image generation workflow orchestration
+- UI layout and component wiring
+- Event handler registration (delegates to handlers/ modules)
 - Three operation modes with explicit switching (Idle, Chat, Generate)
 - **Visual mode indicators** with color-coded banners and tips
 - **Image action buttons** for quick operations
 - **Auto-mode switching** with toast notifications
-- **Primary focus: Event handlers and application logic**
-- **UI components extracted to ui/components/ module**
+- **Primary focus: UI assembly and event wiring**
+- **Event handlers extracted to handlers/ module** (58 functions)
+- **UI components extracted to ui/components/ module** (6 builders)
 
-**`ui/components/`** (modular UI architecture - **6** component builders)
+**`handlers/`** (event handler modules - **58** functions across 6 modules)
+- `mode_handlers.py`: Mode switching and auto-switch logic (2 functions)
+- `gallery_handlers.py`: Gallery operations, favorites, img2img loading (9 functions)
+- `workflow_handlers.py`: Workflow switching, import/export (6 functions)
+- `chat_handlers.py`: Text/vision chat, prompt extraction, history (10 functions)
+- `generation_handlers.py`: Image generation, seeds, queue, presets (13 functions)
+- `ui_handlers.py`: Toast notifications, theme, composer, modals (18 functions)
+- **Benefits:** Testable handlers, clear responsibility, easier to maintain
+
+**`ui/components/`** (UI component builders - **6** modules)
 - `mode_selector.py`: Mode selection radio buttons with status display (96 lines)
 - `chat_interface.py`: Text Chat and Vision Chat tabbed interface (141 lines)
 - `generation_panel.py`: Generation controls, settings, workflow selector, **image action buttons** (475 lines)
@@ -129,7 +138,7 @@ pytest -m "not slow"           # Exclude slow tests
 - `prompt_composer_panel.py`: Tag browser and template library UI (200 lines)
 - **Benefits:** Reusable components, better maintainability, clear separation of concerns
 
-**`core/`** (modular architecture - **13** business logic classes + exceptions)
+**`core/`** (business logic modules - **13** classes + exceptions)
 - `mode_manager.py`: Mode switching and VRAM management
 - `image_gallery.py`: Session storage with auto-save, filtering, sorting, favorites
 - `vram_monitor.py`: Real-time GPU VRAM monitoring
@@ -459,10 +468,18 @@ See **[CONTRIBUTING.md](./CONTRIBUTING.md)** for complete code style guide.
 
 ```
 ai-image-chat/
-├── app.py                      # Main Gradio application (~1,670 lines)
+├── app.py                      # Main Gradio application (~2,200 lines)
 ├── comfyui_api.py             # ComfyUI API bridge (~350 lines)
 ├── config.py                  # Configuration (~160 lines)
-├── ui/                        # UI components module (NEW - modular UI architecture)
+├── handlers/                  # Event handler modules (NEW - extracted from app.py)
+│   ├── __init__.py           # Handler exports
+│   ├── mode_handlers.py      # Mode switching (2 functions, 109 lines)
+│   ├── gallery_handlers.py   # Gallery operations (9 functions, 286 lines)
+│   ├── workflow_handlers.py  # Workflow management (6 functions, 178 lines)
+│   ├── chat_handlers.py      # Chat & prompt handling (10 functions, 298 lines)
+│   ├── generation_handlers.py # Image generation (13 functions, 472 lines)
+│   └── ui_handlers.py        # UI controls (18 functions, 335 lines)
+├── ui/                        # UI components module (modular UI architecture)
 │   ├── __init__.py           # Module exports
 │   └── components/           # Reusable UI component builders
 │       ├── __init__.py       # Component exports
@@ -473,7 +490,7 @@ ai-image-chat/
 │       ├── theme_settings.py # Theme customization panel (110 lines)
 │       ├── prompt_composer_panel.py # Prompt composer UI (200 lines)
 │       └── README.md         # Component documentation
-├── static/                    # Static assets (NEW - external JS/CSS)
+├── static/                    # Static assets (external JS/CSS)
 │   ├── css/
 │   │   └── styles.css        # Custom styling, themes, animations (500 lines)
 │   └── js/                   # JavaScript modules
@@ -550,13 +567,20 @@ ai-image-chat/
 
 ## Modular Architecture (Phases 2.5, 3 & UI Refactoring)
 
-**Last Updated:** 2025-10-03
+**Last Updated:** 2025-10-04
 **Goal:** Improve maintainability, add Phase 2.5 polish, enable Phase 3 features, modular UI, and UI/UX polish
 
 ### Changes:
+- **Event Handlers Extraction (2025-10-04 - NEW):**
+  - Created `handlers/` module with **6** handler modules containing **58** functions
+  - Reduced app.py from ~2,885 to ~2,216 lines (**669 line reduction**, 23.2%)
+  - Extracted all event handler logic into testable, reusable functions
+  - Mode, gallery, workflow, chat, generation, and UI handlers
+  - All handlers use dependency injection for testability
+  - **Result:** app.py now focuses solely on UI assembly and event wiring
+
 - **UI Components Extraction (2025-10-01):**
   - Created `ui/components/` module with **6** reusable UI component builders
-  - Reduced app.py from ~2,000 to ~1,800 lines (264 net line reduction)
   - Extracted mode selector, chat interface, generation panel, gallery view, theme settings, and prompt composer
   - All components return dictionaries for flexible access
   - Comprehensive docstrings with parameter/return documentation
@@ -589,6 +613,15 @@ ai-image-chat/
 
 ### Importing Modules:
 ```python
+# Import event handlers
+from handlers import (
+    handle_mode_change,
+    toggle_auto_switch,
+    update_gallery_display,
+    generate_and_store,
+    # ... 54 more handler functions
+)
+
 # Import UI components
 from ui.components import (
     create_mode_selector,
