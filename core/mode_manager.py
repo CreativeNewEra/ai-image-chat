@@ -8,6 +8,7 @@ and manages VRAM efficiently.
 import logging
 import time
 from enum import Enum
+from typing import Optional
 
 import requests
 
@@ -38,6 +39,37 @@ class ModeManager:
         self.is_loading = False
         self.vram_monitor = vram_monitor
         self.comfy = comfy_bridge
+
+    def set_mode(self, mode: "Mode | str", *, return_status: bool = False) -> Optional[str]:
+        """Force the manager into a specific mode.
+
+        Args:
+            mode: The mode to set. Accepts either a :class:`Mode` enum value or a
+                string slug matching one of the enum values (e.g. ``"chat"``).
+            return_status: When ``True``, the updated status message is returned so
+                callers can refresh the UI immediately.
+
+        Returns:
+            The current status message if ``return_status`` is ``True``; otherwise
+            ``None``.
+        """
+
+        if isinstance(mode, str):
+            try:
+                mode = Mode(mode.lower())
+            except ValueError as exc:
+                raise ValueError(f"Unknown mode slug: {mode}") from exc
+        elif not isinstance(mode, Mode):
+            raise TypeError("mode must be a Mode enum or string slug")
+
+        if self.is_loading and mode != self.current_mode:
+            self.is_loading = False
+
+        self.current_mode = mode
+
+        if return_status:
+            return self._get_status_message()
+        return None
 
     def get_mode(self):
         return self.current_mode
