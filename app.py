@@ -104,8 +104,23 @@ def _extract_text_content(content):
 
 
 def extract_from_chat(history):
-    """Extract the most recent assistant prompt from chat history."""
+    """
+    Extract the most recent assistant prompt from chat history.
 
+    Args:
+        history (list): The chat history. Supported formats:
+            - List of dicts: Each dict should have at least a "role" key (e.g., "assistant") and a "content" key.
+            - List of tuples/lists: Each entry is a (user, assistant) tuple or list, where the assistant's response is at index 1.
+
+    Returns:
+        tuple: (content_text, toast)
+            - content_text (str): The extracted assistant prompt, or an error message if not found.
+            - toast (gradio.Update): A Gradio update object for showing or hiding a toast notification.
+
+    Notes:
+        - If the most recent assistant prompt is found and is longer than 30 characters, the function may trigger a mode switch to GENERATE and show a success toast.
+        - If no suitable prompt is found, an error message and a hidden toast are returned.
+    """
     if not history:
         return "No chat history to extract from!", hide_toast()
 
