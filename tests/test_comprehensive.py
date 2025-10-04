@@ -58,6 +58,7 @@ def test_workflow_manager_loads_workflows(workflows_dir: Path) -> None:
     assert listing == [
         {
             "filename": "sample.json",
+            "path": "text2img/sample.json",
             "name": "Sample Workflow",
             "category": "Text2Image",
             "description": "Workflow loaded for unit testing",

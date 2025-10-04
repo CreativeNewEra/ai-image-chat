@@ -93,8 +93,16 @@ class WorkflowMetadata:
 class Workflow:
     """Represents a ComfyUI workflow with metadata"""
 
-    def __init__(self, filename: str, workflow_data: dict, metadata: WorkflowMetadata):
-        self.filename = filename
+    def __init__(
+        self,
+        key: str,
+        filepath: Path,
+        workflow_data: dict,
+        metadata: WorkflowMetadata,
+    ):
+        self.key = key
+        self.filepath = filepath
+        self.filename = filepath.name
         self.workflow_data = workflow_data
         self.metadata = metadata
 
@@ -111,7 +119,11 @@ class Workflow:
 
     def to_dict(self) -> dict:
         """Convert to dictionary for storage"""
-        return {"filename": self.filename, "metadata": self.metadata.to_dict()}
+        return {
+            "filename": self.filename,
+            "path": self.key,
+            "metadata": self.metadata.to_dict(),
+        }
 
 
 class WorkflowManager:
@@ -119,8 +131,8 @@ class WorkflowManager:
 
     def __init__(self, workflows_dir: str = "./workflows"):
         self.workflows_dir = Path(workflows_dir)
-        self.workflows: dict[str, Workflow] = {}  # filename -> Workflow
-        self.current_workflow_name: str | None = None
+        self.workflows: dict[str, Workflow] = {}  # key -> Workflow
+        self.current_workflow_name: str | None = None  # Stores workflow key
 
         # Create workflows directory if it doesn't exist
         self.workflows_dir.mkdir(exist_ok=True)
@@ -195,11 +207,56 @@ class WorkflowManager:
                 category=self._infer_category(filepath),
             )
 
-        filename = filepath.name
-        workflow = Workflow(filename, workflow_data, metadata)
-        self.workflows[filename] = workflow
+        try:
+            relative_path = filepath.relative_to(self.workflows_dir)
+        except ValueError:
+            raise WorkflowLoadError(
+                f"Workflow file '{filepath}' is outside the workflows directory '{self.workflows_dir}'."
+            )
+
+        key = relative_path.as_posix()
+        workflow = Workflow(key, filepath, workflow_data, metadata)
+        self.workflows[key] = workflow
 
         logger.info(f"✓ Loaded workflow: {workflow.metadata.name}")
+
+    def _normalize_identifier(self, identifier: str) -> str:
+        """Normalize user provided identifiers for lookup."""
+
+        identifier = identifier.replace("\\", "/")
+        path = Path(identifier)
+        if path.is_absolute():
+            try:
+                return path.relative_to(self.workflows_dir).as_posix()
+            except ValueError:
+                return path.as_posix()
+        return path.as_posix()
+
+    def _resolve_key(self, identifier: str) -> str | None:
+        """Resolve a workflow identifier to the stored key."""
+
+        normalized = self._normalize_identifier(identifier)
+
+        if normalized in self.workflows:
+            return normalized
+
+        # Allow lookup by simple filename when unambiguous
+        matches = [
+            key for key in self.workflows if Path(key).name == Path(normalized).name
+        ]
+
+        if len(matches) == 1:
+            return matches[0]
+
+        if len(matches) > 1:
+            logger.error(
+                "Ambiguous workflow identifier '%s'. Provide a relative path.",
+                identifier,
+            )
+        else:
+            logger.error("Workflow not found: %s", identifier)
+
+        return None
 
     def _infer_category(self, filepath: Path) -> str:
         """Infer category from file path"""
@@ -251,8 +308,12 @@ class WorkflowManager:
             return False
 
     def get_workflow(self, filename: str) -> Workflow | None:
-        """Get workflow by filename"""
-        return self.workflows.get(filename)
+        """Get workflow by identifier"""
+
+        key = self._resolve_key(filename)
+        if key is None:
+            return None
+        return self.workflows.get(key)
 
     def get_current_workflow(self) -> Workflow | None:
         """Get currently selected workflow"""
@@ -262,12 +323,16 @@ class WorkflowManager:
 
     def set_current_workflow(self, filename: str) -> bool:
         """Set current workflow"""
-        if filename in self.workflows:
-            self.current_workflow_name = filename
-            logger.info(f"✓ Switched to workflow: {self.workflows[filename].metadata.name}")
-            return True
-        logger.error(f"Workflow not found: {filename}")
-        return False
+        key = self._resolve_key(filename)
+        if key is None:
+            return False
+
+        self.current_workflow_name = key
+        logger.info(
+            "✓ Switched to workflow: %s",
+            self.workflows[key].metadata.name,
+        )
+        return True
 
     def get_workflows_by_category(self, category: str) -> list[Workflow]:
         """Get all workflows in a category"""
@@ -287,13 +352,14 @@ class WorkflowManager:
         """Get list of workflows for display"""
         return [
             {
-                "filename": filename,
+                "filename": wf.filename,
+                "path": key,
                 "name": wf.metadata.name,
                 "category": wf.metadata.category,
                 "description": wf.get_short_description(),
                 "tags": wf.metadata.tags,
             }
-            for filename, wf in self.workflows.items()
+            for key, wf in self.workflows.items()
         ]
 
     def search_workflows(self, query: str) -> list[Workflow]:
@@ -320,27 +386,24 @@ class WorkflowManager:
 
     def delete_workflow(self, filename: str) -> bool:
         """Delete a workflow"""
-        if filename not in self.workflows:
+        key = self._resolve_key(filename)
+        if key is None:
             return False
 
         try:
-            workflow = self.workflows[filename]
+            workflow = self.workflows[key]
 
-            # Find and delete files
-            for json_file in self.workflows_dir.rglob(filename):
-                # Delete workflow file
+            json_file = self.workflows_dir / key
+            if json_file.exists():
                 json_file.unlink()
 
-                # Delete metadata file
-                meta_file = json_file.parent / f"{json_file.stem}_meta.json"
-                if meta_file.exists():
-                    meta_file.unlink()
+            meta_file = workflow.filepath.with_name(f"{workflow.filepath.stem}_meta.json")
+            if meta_file.exists():
+                meta_file.unlink()
 
-            # Remove from memory
-            del self.workflows[filename]
+            del self.workflows[key]
 
-            # Clear current if it was deleted
-            if self.current_workflow_name == filename:
+            if self.current_workflow_name == key:
                 self.current_workflow_name = None
 
             logger.info(f"✓ Deleted workflow: {workflow.metadata.name}")
@@ -352,11 +415,12 @@ class WorkflowManager:
 
     def export_workflow(self, filename: str, export_path: str) -> bool:
         """Export a workflow with metadata"""
-        if filename not in self.workflows:
+        key = self._resolve_key(filename)
+        if key is None:
             return False
 
         try:
-            workflow = self.workflows[filename]
+            workflow = self.workflows[key]
 
             # Create export package
             export_data = {
@@ -399,18 +463,23 @@ class WorkflowManager:
             # Generate unique filename
             base_name = metadata.name.lower().replace(" ", "_")
             filename = f"{base_name}.json"
+            dest_relative = Path("custom") / filename
             counter = 1
-            while filename in self.workflows:
+            while (
+                dest_relative.as_posix() in self.workflows
+                or (self.workflows_dir / dest_relative).exists()
+            ):
                 filename = f"{base_name}_{counter}.json"
+                dest_relative = Path("custom") / filename
                 counter += 1
 
             # Save to custom folder
-            dest_path = self.workflows_dir / "custom" / filename
+            dest_path = self.workflows_dir / dest_relative
             with open(dest_path, "w") as f:
                 json.dump(workflow_data, f, indent=2)
 
             # Save metadata
-            meta_path = self.workflows_dir / "custom" / f"{Path(filename).stem}_meta.json"
+            meta_path = dest_path.with_name(f"{dest_path.stem}_meta.json")
             with open(meta_path, "w") as f:
                 json.dump(metadata.to_dict(), f, indent=2)
 
@@ -438,5 +507,9 @@ class WorkflowManager:
         return {
             "total": len(self.workflows),
             "categories": categories,
-            "current": self.current_workflow_name,
+            "current": (
+                self.workflows[self.current_workflow_name].filename
+                if self.current_workflow_name and self.current_workflow_name in self.workflows
+                else None
+            ),
         }
