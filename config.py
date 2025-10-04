@@ -5,6 +5,7 @@ All settings in one place
 
 import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -16,10 +17,21 @@ load_dotenv()
 # ============================================================================
 
 # Configure logging
+_default_log_dir = Path(__file__).resolve().parent / "data" / "logs"
+LOG_DIR = Path(os.getenv("LOG_DIR", _default_log_dir))
+
+log_handlers = [logging.StreamHandler()]
+
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_handlers.append(logging.FileHandler(LOG_DIR / "ai_image_chat.log"))
+except OSError:
+    log_handlers.append(logging.NullHandler())
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("data/logs/ai_image_chat.log"), logging.StreamHandler()],
+    handlers=log_handlers,
 )
 
 # Set log level from environment variable if provided
