@@ -24,6 +24,8 @@ from .smart_switch import SmartSwitchManager
 from .vram_estimator import VRAMEstimator
 from .vram_monitor import VRAMMonitor
 from .workflow_manager import Workflow, WorkflowManager, WorkflowMetadata
+from .theme_manager import ThemeManager, ThemePreferences
+from .prompt_composer import PromptComposer, PromptTag, PromptTemplate
 
 __all__ = [
     "VRAMMonitor",
@@ -41,6 +43,11 @@ __all__ = [
     "WorkflowManager",
     "Workflow",
     "WorkflowMetadata",
+    "ThemeManager",
+    "ThemePreferences",
+    "PromptComposer",
+    "PromptTag",
+    "PromptTemplate",
     # Exceptions
     "AIImageChatException",
     "ComfyUINotAvailableError",

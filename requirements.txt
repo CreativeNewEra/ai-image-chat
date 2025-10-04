@@ -6,10 +6,10 @@
 # - Run `pip install -r requirements.txt` for production installations
 # - For development, use requirements-dev.txt instead
 #
-# Last updated: 2025-10-01
+# Last updated: 2025-10-01 (Gradio 5 upgrade)
 
 # Core Web Framework
-gradio==4.44.1
+gradio==5.48.0
 
 # HTTP Client
 requests==2.32.3

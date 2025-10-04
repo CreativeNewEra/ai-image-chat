@@ -48,6 +48,11 @@ gallery_images.json
 session_stats.json
 vram_cache.json
 
+# User preferences (auto-generated)
+theme_preferences.json
+prompt_templates.json
+prompt_history.json
+
 # Environment files
 .env
 .env.local

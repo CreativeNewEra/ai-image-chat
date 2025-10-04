@@ -22,13 +22,23 @@ from core import (
     JobStatus,
     Mode,
     ModeManager,
+    PromptComposer,
     PromptHistory,
     SeedManager,
     SessionStats,
     SmartSwitchManager,
+    ThemeManager,
     VRAMEstimator,
     VRAMMonitor,
     WorkflowManager,
+)
+from ui.components import (
+    create_chat_interface,
+    create_gallery_view,
+    create_generation_panel,
+    create_mode_selector,
+    create_prompt_composer,
+    create_theme_settings,
 )
 from utils import pil_to_base64
 
@@ -49,13 +59,23 @@ smart_switch = SmartSwitchManager()
 gallery = ImageGallery()
 gen_queue = GenerationQueue()
 workflow_manager = WorkflowManager()
+theme_manager = ThemeManager()
+prompt_composer = PromptComposer()
 
-# Set first workflow as current if none selected
+# Set default workflow (prefer text2img)
 if not workflow_manager.get_current_workflow() and workflow_manager.get_workflow_count() > 0:
-    first_workflow = list(workflow_manager.workflows.keys())[0]
-    workflow_manager.set_current_workflow(first_workflow)
+    # Try to find a text2img workflow first
+    text2img_workflow = None
+    for workflow_id, workflow in workflow_manager.workflows.items():
+        if workflow.metadata.category == "text2img":
+            text2img_workflow = workflow_id
+            break
+
+    # Use text2img if found, otherwise use first available
+    default_workflow = text2img_workflow or list(workflow_manager.workflows.keys())[0]
+    workflow_manager.set_current_workflow(default_workflow)
     logger.info(
-        f"Auto-selected first workflow: {workflow_manager.get_current_workflow().metadata.name}"
+        f"Auto-selected default workflow: {workflow_manager.get_current_workflow().metadata.name}"
     )
 
 # Mode manager needs vram_monitor and comfy
@@ -94,11 +114,17 @@ def chat_with_ollama(message, history, model_choice, current_prompt):
 
     try:
         # Build message history
+        # Gradio 5 uses 'messages' format with 'role' and 'content' keys
         messages = []
         for h in history:
-            messages.append({"role": "user", "content": h[0]})
-            if h[1]:
-                messages.append({"role": "assistant", "content": h[1]})
+            # History is already in messages format: {"role": "user/assistant", "content": "..."}
+            if isinstance(h, dict) and "role" in h and "content" in h:
+                messages.append(h)
+            # Fallback for old tuple format (backwards compatibility)
+            elif isinstance(h, (list, tuple)) and len(h) >= 2:
+                messages.append({"role": "user", "content": h[0]})
+                if h[1]:
+                    messages.append({"role": "assistant", "content": h[1]})
 
         # Add current message
         messages.append({"role": "user", "content": message})
@@ -132,11 +158,11 @@ def chat_with_ollama(message, history, model_choice, current_prompt):
 def vision_chat_with_ollama(message, history, current_image, current_prompt):
     """Send message with image to Ollama vision model and get response"""
 
-    if mode_manager.get_mode() != Mode.VISION:
-        return "⚠️ Please switch to Vision Chat Mode first!"
+    if mode_manager.get_mode() != Mode.CHAT:
+        return "⚠️ Please switch to Chat Mode first!"
 
     if current_image is None:
-        return "⚠️ No image loaded! Generate an image first, then switch to Vision Chat mode."
+        return "⚠️ No image loaded! Generate an image first, then click on it in the gallery."
 
     try:
         # Convert image to base64
@@ -145,11 +171,19 @@ def vision_chat_with_ollama(message, history, current_image, current_prompt):
             return "⚠️ Failed to process image"
 
         # Build message history (text only for history)
+        # Gradio 5 uses 'messages' format with 'role' and 'content' keys
         messages = []
         for h in history:
-            messages.append({"role": "user", "content": h[0]})
-            if h[1]:
-                messages.append({"role": "assistant", "content": h[1]})
+            # History is already in messages format
+            if isinstance(h, dict) and "role" in h and "content" in h:
+                # Remove images from history (only current message has image)
+                msg = {"role": h["role"], "content": h["content"]}
+                messages.append(msg)
+            # Fallback for old tuple format
+            elif isinstance(h, (list, tuple)) and len(h) >= 2:
+                messages.append({"role": "user", "content": h[0]})
+                if h[1]:
+                    messages.append({"role": "assistant", "content": h[1]})
 
         # Add current message with image
         messages.append({"role": "user", "content": message, "images": [image_base64]})
@@ -261,18 +295,27 @@ def generate_image(
     if input_image_path:
         logger.info(f"Input image: {input_image_path}, denoise: {denoise}")
 
-    # Load current workflow from manager
+    # Auto-select correct workflow based on generation mode
+    required_category = "img2img" if input_image_path else "text2img"
     current_workflow = workflow_manager.get_current_workflow()
-    if current_workflow:
-        logger.info(f"Using workflow: {current_workflow.metadata.name}")
-        # Load workflow data into ComfyUI bridge
-        if not comfy.load_workflow_from_data(current_workflow.workflow_data):
-            return None, "❌ Failed to load workflow", None, None
-    else:
-        # Fallback to default workflow file
-        logger.warning("No workflow selected, using default from file")
-        if not comfy.load_workflow():
-            return None, "❌ Failed to load default workflow", None, None
+
+    # If current workflow doesn't match required category, find the right one
+    if not current_workflow or current_workflow.metadata.category != required_category:
+        logger.info(f"Searching for {required_category} workflow...")
+        for workflow_id, workflow in workflow_manager.workflows.items():
+            if workflow.metadata.category == required_category:
+                workflow_manager.set_current_workflow(workflow_id)
+                current_workflow = workflow
+                logger.info(f"Auto-selected {required_category} workflow: {workflow.metadata.name}")
+                break
+
+        if not current_workflow or current_workflow.metadata.category != required_category:
+            return None, f"❌ No {required_category} workflow available. Please add one to workflows/{required_category}/", None, None
+
+    # Load workflow data into ComfyUI bridge (reload every time)
+    logger.info(f"Using workflow: {current_workflow.metadata.name} ({current_workflow.metadata.category})")
+    if not comfy.load_workflow_from_data(current_workflow.workflow_data):
+        return None, "❌ Failed to load workflow", None, None
 
     # Parse seed
     seed = None
@@ -318,11 +361,17 @@ def generate_image(
         # Add prompt to history
         prompt_history.add_prompt(prompt_text, settings)
 
+        # Show success notification
+        gr.Info(f"✨ Image generated in {round(generation_time, 1)}s (Seed: {actual_seed})")
+
         # Return seed info and time in status
         lock_status = " 🔒 LOCKED" if seed_manager.is_locked else ""
         status = (
             f"{status}\n\nSeed: {actual_seed}{lock_status} | Time: {round(generation_time, 1)}s"
         )
+    else:
+        # Show error notification on failure
+        gr.Error("Failed to generate image - check ComfyUI status")
 
     # Return stats display as 4th value
     stats_display = session_stats.get_stats_display()
@@ -354,6 +403,7 @@ def add_to_queue(prompt_text, steps, width, height, seed_value):
 
     job_id = gen_queue.add_job(prompt_text, width, height, steps, seed)
     logger.info(f"Added job {job_id} to queue")
+    gr.Info(f"Added to queue (Job #{job_id[-4:]})")
 
     return f"✅ Added to queue (Job #{job_id[-4:]})", gen_queue.get_queue_display()
 
@@ -387,6 +437,7 @@ def add_batch_variations(prompt_text, steps, width, height, seed_value, count=4)
 
     job_ids = gen_queue.add_batch_variations(prompt_text, width, height, steps, seed, count)
     logger.info(f"Added {count} variation jobs to queue")
+    gr.Info(f"🎲 Added {count} seed variations to queue")
 
     return (
         f"✅ Added {count} seed variations to queue (seed {seed} +1, +2, +3...)",
@@ -480,155 +531,74 @@ def cancel_all_queue():
 def create_app():
     """Create Gradio UI"""
 
-    # JavaScript for toast notifications and keyboard shortcuts
-    custom_js = """
-    // Toast Notification System
-    function showToast(message, type = 'info', duration = 3000) {
-        const toast = document.createElement('div');
-        toast.className = `toast toast-${type}`;
+    # ============================================================================
+    # EXTERNAL JAVASCRIPT MODULES
+    # ============================================================================
+    # JavaScript code has been extracted to static/js/ for better organization:
+    # - static/js/main.js: Entry point, imports and initializes all modules
+    # - static/js/toast.js: Toast notification system
+    # - static/js/keyboard_shortcuts.js: Keyboard shortcuts (with stopPropagation fix)
+    #
+    # The main.js module is loaded as an ES6 module, which allows proper imports.
+    # It makes showToast() globally available for Gradio's inline JS callbacks.
+    # JavaScript is disabled for now - Gradio 5 changed static file serving
+    # Keyboard shortcuts will be re-implemented in a future update
+    # custom_js = """
+    # // Load external JavaScript modules
+    # import('/file=static/js/main.js');
+    # """
 
-        const icon = {
-            'success': '✅',
-            'error': '❌',
-            'warning': '⚠️',
-            'info': 'ℹ️'
-        }[type] || 'ℹ️';
-
-        toast.innerHTML = `<span class="toast-icon">${icon}</span><span class="toast-message">${message}</span>`;
-
-        const container = document.getElementById('toast-container') || createToastContainer();
-        container.appendChild(toast);
-
-        // Trigger animation
-        setTimeout(() => toast.classList.add('toast-show'), 10);
-
-        // Auto remove
-        setTimeout(() => {
-            toast.classList.remove('toast-show');
-            setTimeout(() => toast.remove(), 300);
-        }, duration);
-    }
-
-    function createToastContainer() {
-        const container = document.createElement('div');
-        container.id = 'toast-container';
-        document.body.appendChild(container);
-        return container;
-    }
-
-    // Make showToast available globally
-    window.showToast = showToast;
-
-    // Keyboard shortcuts (disabled but kept for future)
-    function setupKeyboardShortcuts() {
-        // Helper function to find button by text content
-        function findButtonByText(text) {
-            const buttons = Array.from(document.querySelectorAll('button'));
-            return buttons.find(btn => btn.textContent.includes(text));
-        }
-
-        document.addEventListener('keydown', function(e) {
-            // Don't trigger if user is typing in an input/textarea
-            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-                // Allow Ctrl+Enter in textareas to submit
-                if (e.ctrlKey && e.key === 'Enter') {
-                    e.preventDefault();
-                    const sendBtn = findButtonByText('Send');
-                    if (sendBtn) sendBtn.click();
-                }
-                return;
-            }
-
-            // Mode switching (Alt+key)
-            if (e.altKey && !e.ctrlKey && !e.shiftKey) {
-                let btn = null;
-                switch(e.key.toLowerCase()) {
-                    case 'i':
-                        e.preventDefault();
-                        btn = findButtonByText('🔵 Idle');
-                        break;
-                    case 'c':
-                        e.preventDefault();
-                        btn = findButtonByText('💬 Text Chat');
-                        break;
-                    case 'v':
-                        e.preventDefault();
-                        btn = findButtonByText('👁️ Vision Chat');
-                        break;
-                    case 'g':
-                        e.preventDefault();
-                        btn = findButtonByText('🎨 Generate');
-                        break;
-                }
-                if (btn) btn.click();
-            }
-
-            // Actions (Ctrl+key)
-            if (e.ctrlKey && !e.altKey && !e.shiftKey) {
-                let btn = null;
-                switch(e.key.toLowerCase()) {
-                    case 'g':
-                        e.preventDefault();
-                        btn = findButtonByText('🎨 Generate Image');
-                        break;
-                    case 'k':
-                        e.preventDefault();
-                        btn = findButtonByText('📋 Copy Prompt');
-                        break;
-                    case 'l':
-                        e.preventDefault();
-                        btn = findButtonByText('🔄 Use Last');
-                        break;
-                    case '1':
-                        e.preventDefault();
-                        btn = findButtonByText('⚡ Fast Draft');
-                        break;
-                    case '2':
-                        e.preventDefault();
-                        btn = findButtonByText('⚖️ Balanced');
-                        break;
-                    case '3':
-                        e.preventDefault();
-                        btn = findButtonByText('✨ High Quality');
-                        break;
-                    case '4':
-                        e.preventDefault();
-                        btn = findButtonByText('🔥 Ultra Detail');
-                        break;
-                }
-                if (btn) btn.click();
-            }
-
-            // Clear chat (Ctrl+Shift+C)
-            if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'c') {
-                e.preventDefault();
-                const btn = findButtonByText('🗑️ Clear Chat');
-                if (btn) btn.click();
-            }
-
-            // Show help (? or Shift+/)
-            if (e.key === '?' || (e.shiftKey && e.key === '/')) {
-                e.preventDefault();
-                const btn = findButtonByText('⌨️ Shortcuts');
-                if (btn) btn.click();
-            }
-        });
-    }
-
-    // Run setup when page loads
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', setupKeyboardShortcuts);
-    } else {
-        setupKeyboardShortcuts();
-    }
-    """
+    # Load external CSS file
+    custom_css = ""
+    try:
+        with open("static/css/styles.css", "r") as f:
+            custom_css = f.read()
+    except FileNotFoundError:
+        logger.warning("Custom CSS file not found: static/css/styles.css")
 
     with gr.Blocks(
         theme=gr.themes.Soft(primary_hue="blue"),
         title="AI Image Chat",
-        js=custom_js,  # Toast notifications enabled!
-        css="""
-        /* Mode Status Card */
+        # js=custom_js,  # Disabled: Gradio 5 compatibility issue with /file= path
+        css=custom_css + """
+        /* ========================================
+           MODE-SPECIFIC STYLES (App.py)
+           ======================================== */
+
+        /* Mode Status Banner */
+        .mode-status-banner {
+            padding: 16px 24px;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transition: all 0.3s ease;
+            border-left: 6px solid;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .mode-idle {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+            border-left-color: #2196f3;
+            color: #1565c0;
+        }
+
+        .mode-chat {
+            background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%);
+            border-left-color: #4caf50;
+            color: #2e7d32;
+        }
+
+        .mode-generate {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe0b2 100%);
+            border-left-color: #ff9800;
+            color: #e65100;
+        }
+
+        /* Mode Status Card (legacy) */
         .mode-status {
             padding: 20px;
             border-radius: 12px;
@@ -676,23 +646,86 @@ def create_app():
 
         .mode-radio-group label {
             background: #f3f4f6 !important;
-            padding: 12px 20px !important;
-            border-radius: 8px !important;
-            border: 2px solid transparent !important;
+            padding: 14px 24px !important;
+            border-radius: 10px !important;
+            border: 3px solid transparent !important;
             cursor: pointer !important;
-            transition: all 0.2s ease !important;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
             font-weight: 500 !important;
+            font-size: 15px !important;
         }
 
         .mode-radio-group label:hover {
             background: #e5e7eb !important;
-            transform: translateY(-1px);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
         }
 
+        /* Active mode button - Idle */
+        .mode-radio-group input[type="radio"]:checked + label[data-testid*="🔵"] {
+            background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%) !important;
+            color: white !important;
+            border-color: #1565c0 !important;
+            box-shadow: 0 6px 16px rgba(33, 150, 243, 0.4) !important;
+            transform: scale(1.05);
+        }
+
+        /* Active mode button - Chat */
+        .mode-radio-group input[type="radio"]:checked + label[data-testid*="💬"] {
+            background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%) !important;
+            color: white !important;
+            border-color: #2e7d32 !important;
+            box-shadow: 0 6px 16px rgba(76, 175, 80, 0.4) !important;
+            transform: scale(1.05);
+        }
+
+        /* Active mode button - Generate */
+        .mode-radio-group input[type="radio"]:checked + label[data-testid*="🎨"] {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%) !important;
+            color: white !important;
+            border-color: #e65100 !important;
+            box-shadow: 0 6px 16px rgba(255, 152, 0, 0.4) !important;
+            transform: scale(1.05);
+        }
+
+        /* Fallback for any active button */
         .mode-radio-group input[type="radio"]:checked + label {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
             color: white !important;
             border-color: #667eea !important;
+            box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4) !important;
+            transform: scale(1.05);
+        }
+
+        /* Mode Tips Display */
+        .mode-tip {
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s ease;
+            animation: slideInDown 0.4s ease;
+        }
+
+        .mode-tip-idle {
+            background: #e3f2fd;
+            color: #1565c0;
+            border-left: 4px solid #2196f3;
+        }
+
+        .mode-tip-chat {
+            background: #e8f5e9;
+            color: #2e7d32;
+            border-left: 4px solid #4caf50;
+        }
+
+        .mode-tip-generate {
+            background: #fff3e0;
+            color: #e65100;
+            border-left: 4px solid #ff9800;
         }
 
         /* VRAM Display */
@@ -704,6 +737,42 @@ def create_app():
             border-radius: 8px;
             border-left: 4px solid #667eea;
             margin-top: 12px;
+            transition: all 0.3s ease;
+        }
+
+        /* Mode Transition Animations */
+        @keyframes slideInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes pulseGlow {
+            0%, 100% {
+                box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+            }
+            50% {
+                box-shadow: 0 6px 24px rgba(102, 126, 234, 0.6);
+            }
+        }
+
+        /* Smooth transitions for all mode elements */
+        .mode-switcher-container {
+            animation: fadeIn 0.5s ease;
         }
 
         /* Shortcuts Modal */
@@ -851,6 +920,134 @@ def create_app():
             0% { transform: translateX(-100%); }
             100% { transform: translateX(400%); }
         }
+
+        /* Image Action Buttons */
+        .image-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        .image-action-btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .image-action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-variations {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-refine {
+            background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+            color: white;
+        }
+
+        .btn-favorite {
+            background: linear-gradient(135deg, #ffd700 0%, #ffa500 100%);
+            color: #333;
+        }
+
+        .btn-copy-seed {
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            color: white;
+        }
+
+        .btn-img2img {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+            color: white;
+        }
+
+        .btn-delete {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+        }
+
+        /* Gallery Image Actions (on hover) */
+        .gallery-item-wrapper {
+            position: relative;
+        }
+
+        .gallery-item-actions {
+            position: absolute;
+            bottom: 8px;
+            left: 8px;
+            right: 8px;
+            display: none;
+            gap: 4px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 6px;
+            border-radius: 8px;
+            backdrop-filter: blur(4px);
+        }
+
+        .gallery-item-wrapper:hover .gallery-item-actions {
+            display: flex;
+        }
+
+        .gallery-action-btn {
+            flex: 1;
+            padding: 6px;
+            border-radius: 6px;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+
+        .gallery-action-btn:hover {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(1.1);
+        }
+
+        /* Image Preview Modal */
+        .image-preview-modal {
+            max-width: 90vw;
+            max-height: 90vh;
+        }
+
+        .image-metadata {
+            background: #f5f5f5;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 12px;
+        }
+
+        .metadata-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .metadata-row:last-child {
+            border-bottom: none;
+        }
+
+        .metadata-label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .metadata-value {
+            color: #333;
+        }
         """,
     ) as app:
 
@@ -864,429 +1061,320 @@ def create_app():
                 """
                 )
             with gr.Column(scale=1):
-                shortcuts_btn = gr.Button("⌨️ Shortcuts", size="sm")
+                with gr.Row():
+                    gallery_btn = gr.Button("📁 Gallery", size="sm", variant="primary")
+                    composer_btn = gr.Button("🎨 Composer", size="sm", variant="secondary")
+                    settings_btn = gr.Button("⚙️ Settings", size="sm")
+                    shortcuts_btn = gr.Button("⌨️ Shortcuts", size="sm")
 
         # State
         current_prompt_state = gr.State("")
         current_image_state = gr.State(None)
+        current_mode_state = gr.State("IDLE")  # Track current mode for UI visibility
 
         # ====================================================================
         # MODE SELECTOR & STATUS
         # ====================================================================
+        # Extracted to ui/components/mode_selector.py for better maintainability
 
-        with gr.Row():
-            with gr.Column(scale=3, elem_classes=["mode-switcher-container"]):
-                gr.Markdown("### 🎛️ Mode Control")
+        (
+            mode_radio,
+            mode_status,
+            check_status_btn,
+            auto_switch_checkbox,
+            shortcuts_help,
+        ) = create_mode_selector()
 
-                mode_radio = gr.Radio(
-                    choices=["🔵 Idle", "💬 Text Chat", "👁️ Vision Chat", "🎨 Generate"],
-                    value="🔵 Idle",
-                    label="",
-                    elem_classes=["mode-radio-group"],
-                    interactive=True,
-                )
+        # Set initial status value (create_mode_selector returns empty string by default)
+        mode_status.value = mode_manager._get_status_message()
 
-                # Status and VRAM inline
-                mode_status = gr.Markdown(
-                    value=mode_manager._get_status_message(), elem_classes=["vram-display"]
-                )
+        # Mode status banner with VRAM
+        mode_status_banner = gr.Markdown(
+            value="🔵 **IDLE MODE** (0.0 GB VRAM)",
+            elem_classes=["mode-status-banner", "mode-idle"]
+        )
 
-                with gr.Row():
-                    check_status_btn = gr.Button("🔄 Refresh Status", size="sm", scale=1)
-                    auto_switch_checkbox = gr.Checkbox(
-                        value=True,
-                        label="💡 Smart Suggestions",
-                        info="Auto-suggest next steps",
-                        scale=2,
-                    )
-
-        # Keyboard shortcuts help (collapsible)
-        with gr.Accordion("⌨️ Keyboard Shortcuts", open=False, visible=False) as shortcuts_help:
-            gr.Markdown(
-                """
-### Mode Switching
-- `Alt+I` - Switch to Idle mode
-- `Alt+C` - Switch to Text Chat mode
-- `Alt+V` - Switch to Vision Chat mode
-- `Alt+G` - Switch to Generate mode
-
-### Actions
-- `Ctrl+Enter` - Send chat message (when focused on message box)
-- `Ctrl+G` - Generate image
-- `Ctrl+K` - Copy prompt to clipboard
-- `Ctrl+L` - Use last seed
-- `Ctrl+Shift+C` - Clear chat
-
-### Generation Presets
-- `Ctrl+1` - Fast Draft preset
-- `Ctrl+2` - Balanced preset
-- `Ctrl+3` - High Quality preset
-- `Ctrl+4` - Ultra Detail preset
-
-### Help
-- `?` or `Shift+/` - Toggle this help panel
-            """,
-                elem_classes=["shortcuts-modal"],
-            )
+        # Mode-specific tips
+        mode_tip = gr.Markdown(
+            value="💡 **Tip:** Choose a mode above to begin",
+            visible=True,
+            elem_classes=["mode-tip", "mode-tip-idle"]
+        )
 
         # Smart mode suggestion display
         smart_suggestion = gr.Markdown(value="", visible=False, elem_classes=["smart-suggestion"])
 
+        # Toast notification component
+        toast_notification = gr.Markdown(
+            value="",
+            visible=False,
+            elem_classes=["toast", "toast-info"]
+        )
+
         gr.Markdown("---")
 
         # ====================================================================
-        # MAIN INTERFACE
+        # MAIN INTERFACE - MODE-SPECIFIC SECTIONS
         # ====================================================================
 
-        with gr.Row():
-            # LEFT COLUMN - Chat Interface
-            with gr.Column(scale=2):
-                gr.Markdown(
-                    '<div class="section-header">💬 AI Chat Assistant</div>',
-                    elem_classes=["section-card"],
+        # IDLE MODE UI
+        with gr.Column(visible=True) as idle_section:
+            gr.Markdown(
+                """
+                ## 👋 Welcome to AI Image Chat
+
+                Choose a mode above to begin:
+
+                - **💬 Chat Mode**: Develop prompts with Text Chat or refine images with Vision Chat
+                - **🎨 Generate Mode**: Create images with ComfyUI + FLUX
+
+                **Workflow:**
+                1. Switch to Chat mode → Develop prompts with AI assistance
+                2. Switch to Generate mode → Create images
+                3. Click gallery images → Auto-switch to Vision Chat for refinement
+                """,
+                elem_classes=["section-card"]
+            )
+
+        # CHAT MODE UI
+        with gr.Column(visible=False) as chat_section:
+            gr.Markdown(
+                '<div class="section-header">💬 AI Chat Assistant</div>',
+                elem_classes=["section-card"],
+            )
+
+            # ============================================================
+            # CHAT INTERFACE
+            # ============================================================
+            # Extracted to ui/components/chat_interface.py for better maintainability
+
+            with gr.Tabs() as chat_tabs:
+                chat_components = create_chat_interface(
+                    available_models=get_available_models(), default_model=OLLAMA_CHAT_MODEL
                 )
 
-                with gr.Tabs() as chat_tabs:
-                    # Text Chat Tab
-                    with gr.Tab("💬 Text Chat"):
-                        gr.Markdown("**Develop new prompts from scratch**")
+            # Extract components from dictionary for easier access
+            chat_tabs = chat_components["chat_tabs"]
+            model_dropdown = chat_components["model_dropdown"]
+            refresh_models_btn = chat_components["refresh_models_btn"]
+            chatbot = chat_components["chatbot"]
+            msg = chat_components["msg"]
+            send_btn = chat_components["send_btn"]
+            clear_chat_btn = chat_components["clear_chat_btn"]
+            vision_chatbot = chat_components["vision_chatbot"]
+            vision_image_preview = chat_components["vision_image_preview"]
+            vision_msg = chat_components["vision_msg"]
+            vision_send_btn = chat_components["vision_send_btn"]
+            clear_vision_btn = chat_components["clear_vision_btn"]
 
-                        with gr.Row():
-                            model_dropdown = gr.Dropdown(
-                                choices=get_available_models(),
-                                value=OLLAMA_CHAT_MODEL,
-                                label="Chat Model",
-                                interactive=True,
-                                scale=3,
-                            )
-                            refresh_models_btn = gr.Button("🔄", size="sm", scale=1)
+        # GENERATE MODE UI
+        with gr.Column(visible=False) as generate_section:
+            # ============================================================
+            # GENERATION PANEL
+            # ============================================================
+            # Extracted to ui/components/generation_panel.py for better maintainability
 
-                        chatbot = gr.Chatbot(
-                            height=350, label="Chat History", show_copy_button=True, type="tuples"
-                        )
+            gen_components = create_generation_panel(
+                workflow_manager=workflow_manager,
+                prompt_history=prompt_history,
+                session_stats=session_stats,
+                default_config={
+                    "DEFAULT_STEPS": DEFAULT_STEPS,
+                    "DEFAULT_WIDTH": DEFAULT_WIDTH,
+                    "DEFAULT_HEIGHT": DEFAULT_HEIGHT,
+                },
+            )
 
-                        with gr.Row():
-                            msg = gr.Textbox(
-                                placeholder="Describe your image idea...", label="Message", scale=4
-                            )
-                            send_btn = gr.Button("Send", scale=1, variant="primary")
+            # Extract components from dictionary for easier access
+            quick_generate_btn = gen_components["quick_generate_btn"]
+            quick_copy_btn = gen_components["quick_copy_btn"]
+            quick_clear_btn = gen_components["quick_clear_btn"]
+            quick_extract_btn = gen_components["quick_extract_btn"]
+            prompt_display = gen_components["prompt_display"]
+            extract_prompt_btn = gen_components["extract_prompt_btn"]
+            copy_prompt_btn = gen_components["copy_prompt_btn"]
+            clear_prompt_btn = gen_components["clear_prompt_btn"]
+            prompt_search = gen_components["prompt_search"]
+            search_btn = gen_components["search_btn"]
+            prompt_history_dropdown = gen_components["prompt_history_dropdown"]
+            load_prompt_btn = gen_components["load_prompt_btn"]
+            refresh_history_btn = gen_components["refresh_history_btn"]
+            export_prompts_btn = gen_components["export_prompts_btn"]
+            import_file = gen_components["import_file"]
+            history_status = gen_components["history_status"]
+            preset_fast = gen_components["preset_fast"]
+            preset_balanced = gen_components["preset_balanced"]
+            preset_quality = gen_components["preset_quality"]
+            preset_ultra = gen_components["preset_ultra"]
+            workflow_dropdown = gen_components["workflow_dropdown"]
+            workflow_refresh_btn = gen_components["workflow_refresh_btn"]
+            workflow_category_filter = gen_components["workflow_category_filter"]
+            workflow_info = gen_components["workflow_info"]
+            workflow_upload_file = gen_components["workflow_upload_file"]
+            workflow_import_btn = gen_components["workflow_import_btn"]
+            workflow_export_btn = gen_components["workflow_export_btn"]
+            steps_slider = gen_components["steps_slider"]
+            width_slider = gen_components["width_slider"]
+            height_slider = gen_components["height_slider"]
+            seed_input = gen_components["seed_input"]
+            seed_lock_checkbox = gen_components["seed_lock_checkbox"]
+            use_last_seed_btn = gen_components["use_last_seed_btn"]
+            seed_random_btn = gen_components["seed_random_btn"]
+            seed_minus_100_btn = gen_components["seed_minus_100_btn"]
+            seed_minus_10_btn = gen_components["seed_minus_10_btn"]
+            seed_minus_1_btn = gen_components["seed_minus_1_btn"]
+            seed_plus_1_btn = gen_components["seed_plus_1_btn"]
+            seed_plus_10_btn = gen_components["seed_plus_10_btn"]
+            seed_plus_100_btn = gen_components["seed_plus_100_btn"]
+            seed_history_dropdown = gen_components["seed_history_dropdown"]
+            input_image = gen_components["input_image"]
+            denoise_slider = gen_components["denoise_slider"]
+            generate_btn = gen_components["generate_btn"]
+            vram_warning_display = gen_components["vram_warning_display"]
+            generation_progress = gen_components["generation_progress"]
+            generation_status = gen_components["generation_status"]
+            generated_image = gen_components["generated_image"]
+            gen_variations_btn = gen_components["gen_variations_btn"]
+            gen_refine_btn = gen_components["gen_refine_btn"]
+            gen_favorite_btn = gen_components["gen_favorite_btn"]
+            gen_copy_seed_btn = gen_components["gen_copy_seed_btn"]
+            stats_display = gen_components["stats_display"]
+            add_queue_btn = gen_components["add_queue_btn"]
+            batch_variations_btn = gen_components["batch_variations_btn"]
+            variation_count = gen_components["variation_count"]
+            queue_status = gen_components["queue_status"]
+            process_queue_btn = gen_components["process_queue_btn"]
+            clear_completed_btn = gen_components["clear_completed_btn"]
+            cancel_all_btn = gen_components["cancel_all_btn"]
 
-                        clear_chat_btn = gr.Button("🗑️ Clear Chat", size="sm")
+        # ====================================================================
+        # GALLERY SECTION
+        # ====================================================================
+        # Gallery with visibility toggle (Gradio 5 compatible)
 
-                        gr.Markdown(
-                            "**Tips:** Be specific about style, mood, lighting, composition"
-                        )
+        with gr.Accordion("📁 Session Gallery", open=False, visible=False) as gallery_modal:
+            gr.Markdown("# 📁 Session Gallery")
 
-                    # Vision Chat Tab
-                    with gr.Tab("👁️ Vision Chat"):
-                        gr.Markdown("**Refine existing images with AI vision**")
+            gallery_components = create_gallery_view()
 
-                        vision_chatbot = gr.Chatbot(
-                            height=350,
-                            label="Vision Chat History",
-                            show_copy_button=True,
-                            type="tuples",
-                        )
+            # Extract components from dictionary for easier access
+            gallery_filter = gallery_components["gallery_filter"]
+            gallery_sort = gallery_components["gallery_sort"]
+            favorites_only_check = gallery_components["favorites_only_check"]
+            refresh_gallery_btn = gallery_components["refresh_gallery_btn"]
+            gallery_stats_btn = gallery_components["gallery_stats_btn"]
+            session_gallery = gallery_components["session_gallery"]
+            gallery_info = gallery_components["gallery_info"]
 
-                        # Image preview in vision chat
-                        vision_image_preview = gr.Image(
-                            label="Current Image Being Discussed",
-                            type="pil",
-                            interactive=False,
-                            height=200,
-                        )
-
-                        with gr.Row():
-                            vision_msg = gr.Textbox(
-                                placeholder="Ask about the image or request changes...",
-                                label="Message",
-                                scale=4,
-                            )
-                            vision_send_btn = gr.Button("Send", scale=1, variant="primary")
-
-                        clear_vision_btn = gr.Button("🗑️ Clear Vision Chat", size="sm")
-
-                        gr.Markdown(
-                            "**Tips:** 'Make the sky more dramatic', 'Change colors to warmer tones', 'Add more detail to the foreground'"
-                        )
-
-            # RIGHT COLUMN - Prompt & Generation
-            with gr.Column(scale=2):
-                gr.Markdown(
-                    '<div class="section-header">🎨 Image Generation</div>',
-                    elem_classes=["section-card"],
+            # Gallery action buttons (for selected image)
+            gr.Markdown("**Selected Image Actions:**")
+            with gr.Row(elem_classes=["image-actions"]):
+                gallery_favorite_btn = gr.Button(
+                    "⭐ Toggle Favorite",
+                    size="sm",
+                    elem_classes=["image-action-btn", "btn-favorite"]
+                )
+                gallery_img2img_btn = gr.Button(
+                    "🎨 Use for Img2Img",
+                    size="sm",
+                    elem_classes=["image-action-btn", "btn-img2img"]
+                )
+                gallery_vision_btn = gr.Button(
+                    "👁️ Open in Vision Chat",
+                    size="sm",
+                    elem_classes=["image-action-btn", "btn-refine"]
+                )
+                gallery_delete_btn = gr.Button(
+                    "🗑️ Delete",
+                    size="sm",
+                    elem_classes=["image-action-btn", "btn-delete"]
                 )
 
-                # Quick Actions Toolbar
-                with gr.Row():
-                    quick_generate_btn = gr.Button(
-                        "⚡ Quick Generate", size="sm", variant="primary"
-                    )
-                    quick_copy_btn = gr.Button("📋 Copy", size="sm")
-                    quick_clear_btn = gr.Button("🗑️ Clear", size="sm")
-                    quick_extract_btn = gr.Button("📝 Extract", size="sm")
+            # Hidden state to track selected gallery image index
+            selected_gallery_index = gr.State(-1)
 
-                # Prompt Editor
-                prompt_display = gr.Textbox(
-                    label="Current Prompt",
-                    placeholder="Prompt will appear here after chatting...",
-                    lines=6,
-                    interactive=True,
-                )
+            # Close button at bottom
+            with gr.Row():
+                close_gallery_btn = gr.Button("✖️ Close Gallery", variant="secondary", size="lg")
 
-                with gr.Row():
-                    extract_prompt_btn = gr.Button("📝 Extract from Chat", size="sm")
-                    copy_prompt_btn = gr.Button("📋 Copy Prompt", size="sm")
-                    clear_prompt_btn = gr.Button("🗑️ Clear", size="sm")
+        # ====================================================================
+        # IMAGE PREVIEW SECTION
+        # ====================================================================
+        # Full-size image preview with metadata and actions (Gradio 5 compatible)
 
-                # Prompt History Section
-                with gr.Accordion("📚 Prompt History", open=False):
-                    with gr.Row():
-                        prompt_search = gr.Textbox(
-                            placeholder="Search prompts...", label="Search", scale=3
-                        )
-                        search_btn = gr.Button("🔍 Search", size="sm", scale=1)
+        with gr.Accordion("🖼️ Image Preview", open=False, visible=False, elem_classes=["image-preview-modal"]) as image_preview_modal:
+            gr.Markdown("# 🖼️ Image Preview")
 
-                    prompt_history_dropdown = gr.Dropdown(
-                        label="Recent Prompts",
-                        choices=prompt_history.get_dropdown_choices(),
-                        value=None,
-                        interactive=True,
-                        allow_custom_value=False,
-                    )
+            preview_image = gr.Image(label="", type="pil", interactive=False)
 
-                    with gr.Row():
-                        load_prompt_btn = gr.Button("📥 Load Selected", size="sm")
-                        refresh_history_btn = gr.Button("🔄 Refresh", size="sm")
+            preview_metadata = gr.Markdown(value="", elem_classes=["image-metadata"])
 
-                    with gr.Row():
-                        export_prompts_btn = gr.Button("💾 Export History", size="sm")
-                        import_file = gr.File(
-                            label="Import History", file_types=[".json"], type="filepath"
-                        )
-
-                    history_status = gr.Textbox(
-                        label="Status", value="", interactive=False, visible=False
-                    )
-
-                # Generation Presets
-                gr.Markdown("**⚡ Quick Presets**")
-                with gr.Row():
-                    preset_fast = gr.Button("⚡ Fast Draft\n768×768, 12 steps", size="sm")
-                    preset_balanced = gr.Button("⚖️ Balanced\n1024×1024, 20 steps", size="sm")
-                with gr.Row():
-                    preset_quality = gr.Button("✨ High Quality\n1024×1024, 30 steps", size="sm")
-                    preset_ultra = gr.Button("🔥 Ultra Detail\n1536×1536, 40 steps", size="sm")
-
-                # Workflow Selector (Phase 3)
-                with gr.Accordion("🔀 Workflow Selector", open=False):
-                    gr.Markdown("Select a ComfyUI workflow to use for generation")
-
-                    with gr.Row():
-                        workflow_dropdown = gr.Dropdown(
-                            label="Workflow",
-                            choices=[wf["name"] for wf in workflow_manager.get_workflows_list()],
-                            value=(
-                                workflow_manager.get_current_workflow().metadata.name
-                                if workflow_manager.get_current_workflow()
-                                else None
-                            ),
-                            interactive=True,
-                            scale=3,
-                        )
-                        workflow_refresh_btn = gr.Button("🔄 Refresh", size="sm", scale=1)
-
-                    with gr.Row():
-                        workflow_category_filter = gr.Dropdown(
-                            label="Filter by Category",
-                            choices=["All"] + workflow_manager.get_all_categories(),
-                            value="All",
-                            interactive=True,
-                        )
-
-                    workflow_info = gr.Markdown(value="Loading workflow info...")
-
-                    with gr.Row():
-                        workflow_upload_file = gr.File(
-                            label="Upload Workflow JSON", file_types=[".json"], type="filepath"
-                        )
-
-                    with gr.Row():
-                        workflow_import_btn = gr.Button("📥 Import Workflow", size="sm")
-                        workflow_export_btn = gr.Button("📤 Export Current", size="sm")
-
-                # Generation Settings
-                with gr.Accordion("⚙️ Generation Settings", open=False):
-                    with gr.Row():
-                        steps_slider = gr.Slider(
-                            minimum=4,
-                            maximum=50,
-                            value=DEFAULT_STEPS,
-                            step=1,
-                            label="Steps (20 recommended for Krea)",
-                        )
-
-                    with gr.Row():
-                        width_slider = gr.Slider(
-                            minimum=512, maximum=2048, value=DEFAULT_WIDTH, step=64, label="Width"
-                        )
-                        height_slider = gr.Slider(
-                            minimum=512, maximum=2048, value=DEFAULT_HEIGHT, step=64, label="Height"
-                        )
-
-                    # Seed Management Section
-                    gr.Markdown("**🎲 Seed Control**")
-
-                    with gr.Row():
-                        seed_input = gr.Textbox(
-                            label="Seed (leave empty for random)",
-                            placeholder="Random seed",
-                            value="",
-                            scale=3,
-                        )
-                        seed_lock_checkbox = gr.Checkbox(
-                            label="🔒 Lock", value=False, info="Keep seed", scale=1
-                        )
-
-                    with gr.Row():
-                        use_last_seed_btn = gr.Button("🔄 Use Last", size="sm")
-                        seed_random_btn = gr.Button("🎲 Random", size="sm")
-
-                    gr.Markdown("**Fine Tune Seed:**")
-                    with gr.Row():
-                        seed_minus_100_btn = gr.Button("−100", size="sm")
-                        seed_minus_10_btn = gr.Button("−10", size="sm")
-                        seed_minus_1_btn = gr.Button("−1", size="sm")
-                        seed_plus_1_btn = gr.Button("+1", size="sm")
-                        seed_plus_10_btn = gr.Button("+10", size="sm")
-                        seed_plus_100_btn = gr.Button("+100", size="sm")
-
-                    with gr.Row():
-                        seed_history_dropdown = gr.Dropdown(
-                            label="Seed History",
-                            choices=[],
-                            value=None,
-                            interactive=True,
-                            allow_custom_value=True,
-                        )
-
-                # Img2Img Settings
-                with gr.Accordion("🖼️ Img2Img Settings (Optional)", open=False):
-                    gr.Markdown(
-                        "Upload an image to modify it instead of generating from scratch. Workflow must support img2img (LoadImage + VAEEncode)."
-                    )
-
-                    input_image = gr.Image(
-                        label="Input Image (leave empty for text2img)",
-                        type="filepath",
-                        interactive=True,
-                    )
-
-                    denoise_slider = gr.Slider(
-                        minimum=0.0,
-                        maximum=1.0,
-                        value=0.75,
-                        step=0.05,
-                        label="Denoise Strength",
-                        info="0.0 = no change, 1.0 = complete regeneration",
-                    )
-
-                # Generate Button
-                generate_btn = gr.Button(
-                    "🎨 Generate Image",
-                    variant="primary",
+            # Preview action buttons
+            with gr.Row(elem_classes=["image-actions"]):
+                preview_refine_btn = gr.Button(
+                    "👁️ Open in Vision Chat",
                     size="lg",
-                    elem_classes=["primary-action"],
+                    variant="primary",
+                    elem_classes=["image-action-btn", "btn-refine"]
+                )
+                preview_close_btn = gr.Button(
+                    "✖️ Close",
+                    size="lg",
+                    variant="secondary"
                 )
 
-                # VRAM Warning Display
-                vram_warning_display = gr.Markdown(value="", visible=False)
+        # ====================================================================
+        # THEME SETTINGS SECTION
+        # ====================================================================
+        # Theme customization panel (Gradio 5 compatible)
 
-                # Progress Bar
-                generation_progress = gr.HTML(
-                    value="", visible=False, elem_classes=["progress-container"]
-                )
+        with gr.Accordion("⚙️ Theme Settings", open=False, visible=False) as settings_modal:
+            gr.Markdown("# ⚙️ Theme Settings")
 
-                # Status
-                generation_status = gr.Textbox(
-                    label="Status", value="Ready when you are!", interactive=False
-                )
+            theme_components = create_theme_settings(theme_manager)
 
-                # Image Display
-                generated_image = gr.Image(
-                    label="Generated Image", type="pil", interactive=False, height=400
-                )
+            # Extract components from dictionary
+            theme_mode = theme_components["theme_mode"]
+            color_scheme = theme_components["color_scheme"]
+            layout_density = theme_components["layout_density"]
+            theme_display = theme_components["theme_display"]
+            apply_theme_btn = theme_components["apply_theme_btn"]
+            reset_theme_btn = theme_components["reset_theme_btn"]
 
-                # Session Stats Display
-                with gr.Accordion("📊 Session Statistics", open=False):
-                    stats_display = gr.Markdown(value=session_stats.get_stats_display())
+            close_settings_btn = gr.Button("✖️ Close", size="lg", variant="secondary")
 
-                # Batch Queue Section
-                with gr.Accordion("🔄 Batch Generation Queue", open=False):
-                    gr.Markdown("Add multiple prompts to a queue and process them sequentially")
+        # ====================================================================
+        # PROMPT COMPOSER SECTION
+        # ====================================================================
+        # Prompt building tool with tags and templates
 
-                    with gr.Row():
-                        add_queue_btn = gr.Button("➕ Add to Queue", variant="secondary")
-                        batch_variations_btn = gr.Button(
-                            "🎲 Add 4 Seed Variations", variant="secondary"
-                        )
+        with gr.Accordion("🎨 Prompt Composer", open=False, visible=False) as composer_modal:
+            gr.Markdown("# 🎨 Prompt Composer")
 
-                    with gr.Row():
-                        variation_count = gr.Slider(
-                            minimum=2, maximum=10, value=4, step=1, label="Variation Count"
-                        )
+            composer_components = create_prompt_composer(prompt_composer)
 
-                    queue_status = gr.Textbox(
-                        label="Queue Status", value="Queue is empty", interactive=False
-                    )
+            # Extract components from dictionary for easier access
+            template_category_filter = composer_components["template_category_filter"]
+            template_selector = composer_components["template_selector"]
+            load_template_btn = composer_components["load_template_btn"]
+            view_template_btn = composer_components["view_template_btn"]
+            template_preview = composer_components["template_preview"]
 
-                    with gr.Row():
-                        process_queue_btn = gr.Button("▶️ Process Next Job", variant="primary")
-                        clear_completed_btn = gr.Button("🗑️ Clear Completed")
-                        cancel_all_btn = gr.Button("❌ Cancel All", variant="stop")
+            tag_buttons = composer_components["tag_buttons"]
+            selected_tags_display = composer_components["selected_tags_display"]
+            build_prompt_btn = composer_components["build_prompt_btn"]
+            clear_tags_btn = composer_components["clear_tags_btn"]
+            built_prompt = composer_components["built_prompt"]
 
-        # Gallery Section (below main interface)
-        gr.Markdown("---")
+            template_name_input = composer_components["template_name_input"]
+            template_desc_input = composer_components["template_desc_input"]
+            template_category_input = composer_components["template_category_input"]
+            save_template_btn = composer_components["save_template_btn"]
+            save_status = composer_components["save_status"]
 
-        with gr.Row(elem_classes=["gallery-controls"]):
-            gr.Markdown('<div class="section-header">🖼️ Session Gallery</div>')
+            copy_to_prompt_btn = composer_components["copy_to_prompt_btn"]
 
-        # Gallery Controls
-        with gr.Row(elem_classes=["gallery-controls"]):
-            with gr.Column(scale=2):
-                gallery_filter = gr.Textbox(
-                    label="🔍 Filter Images", placeholder="Search by prompt keywords...", value=""
-                )
-            with gr.Column(scale=1):
-                gallery_sort = gr.Dropdown(
-                    label="📊 Sort By",
-                    choices=["newest", "oldest", "seed", "resolution"],
-                    value="newest",
-                )
-            with gr.Column(scale=1):
-                favorites_only_check = gr.Checkbox(label="⭐ Favorites Only", value=False)
-
-        with gr.Row():
-            refresh_gallery_btn = gr.Button("🔄 Refresh Gallery")
-            gallery_stats_btn = gr.Button("📊 Gallery Stats")
-
-        with gr.Row():
-            session_gallery = gr.Gallery(
-                label="Generated Images (click to load into Vision Chat)",
-                show_label=True,
-                elem_id="gallery",
-                columns=4,
-                rows=2,
-                height="auto",
-                object_fit="contain",
-            )
-
-        with gr.Row():
-            gallery_info = gr.Textbox(
-                label="Gallery Info",
-                value="No images generated yet this session",
-                interactive=False,
-            )
+            close_composer_btn = gr.Button("✖️ Close", size="lg", variant="secondary")
 
         # ====================================================================
         # EVENT HANDLERS
@@ -1313,18 +1401,21 @@ def create_app():
                 if wf.metadata.name == workflow_name:
                     success = workflow_manager.set_current_workflow(filename)
                     if success:
+                        gr.Info(f"✅ Workflow loaded: {workflow_name}")
                         return (
                             gr.update(value=workflow_name),
                             get_workflow_info_display(),
                             f"✅ Switched to: {workflow_name}",
                         )
                     else:
+                        gr.Warning("Failed to switch workflow")
                         return (
                             gr.update(),
                             get_workflow_info_display(),
                             "❌ Failed to switch workflow",
                         )
 
+            gr.Warning(f"Workflow not found: {workflow_name}")
             return (
                 gr.update(),
                 get_workflow_info_display(),
@@ -1423,24 +1514,81 @@ def create_app():
 
         # Mode switching - unified handler for radio button
         def handle_mode_change(mode_choice):
-            """Handle mode change from radio button"""
+            """Handle mode change from radio button with visual indicators and UI visibility"""
             logger.debug(f"Mode change requested: {mode_choice}")
+
+            # Get VRAM info
+            vram = vram_monitor.get_vram_usage()
+            vram_text = f"{vram['used_gb']} GB" if vram['available'] else "N/A"
 
             if mode_choice == "🔵 Idle":
                 status = mode_manager.switch_to_idle()
-            elif mode_choice == "💬 Text Chat":
+                gr.Info("⚡ Switched to Idle mode - VRAM freed")
+                banner = gr.update(
+                    value=f"🔵 **IDLE MODE** ({vram_text} VRAM)",
+                    elem_classes=["mode-status-banner", "mode-idle"]
+                )
+                tip = gr.update(
+                    value="💡 **Tip:** Choose Chat or Generate mode to start working",
+                    visible=True,
+                    elem_classes=["mode-tip", "mode-tip-idle"]
+                )
+                # Show only idle section
+                idle_vis = gr.update(visible=True)
+                chat_vis = gr.update(visible=False)
+                generate_vis = gr.update(visible=False)
+                current_mode = "IDLE"
+            elif mode_choice == "💬 Chat":
                 status = mode_manager.switch_to_chat()
-            elif mode_choice == "👁️ Vision Chat":
-                status = mode_manager.switch_to_vision()
+                gr.Info(f"💬 Chat mode activated - Model loading ({vram_text})")
+                banner = gr.update(
+                    value=f"🟢 **CHAT MODE** ({vram_text} VRAM)",
+                    elem_classes=["mode-status-banner", "mode-chat"]
+                )
+                tip = gr.update(
+                    value="💡 **Tip:** Develop prompts with Text Chat, or refine images with Vision Chat",
+                    visible=True,
+                    elem_classes=["mode-tip", "mode-tip-chat"]
+                )
+                # Show only chat section
+                idle_vis = gr.update(visible=False)
+                chat_vis = gr.update(visible=True)
+                generate_vis = gr.update(visible=False)
+                current_mode = "CHAT"
             elif mode_choice == "🎨 Generate":
                 status = mode_manager.switch_to_generate()
+                gr.Info(f"🎨 Generate mode ready - ComfyUI active ({vram_text})")
+                banner = gr.update(
+                    value=f"🟠 **GENERATE MODE** ({vram_text} VRAM)",
+                    elem_classes=["mode-status-banner", "mode-generate"]
+                )
+                tip = gr.update(
+                    value="💡 **Tip:** Click generated images in Gallery to refine them with Vision Chat",
+                    visible=True,
+                    elem_classes=["mode-tip", "mode-tip-generate"]
+                )
+                # Show only generate section
+                idle_vis = gr.update(visible=False)
+                chat_vis = gr.update(visible=False)
+                generate_vis = gr.update(visible=True)
+                current_mode = "GENERATE"
             else:
                 status = "Unknown mode selected"
+                banner = gr.update()
+                tip = gr.update()
+                idle_vis = gr.update()
+                chat_vis = gr.update()
+                generate_vis = gr.update()
+                current_mode = "IDLE"
 
-            return status, gr.update(value="", visible=False)
+            return status, gr.update(value="", visible=False), banner, tip, idle_vis, chat_vis, generate_vis, current_mode
 
         # Wire up mode radio button
-        mode_radio.change(handle_mode_change, [mode_radio], [mode_status, smart_suggestion])
+        mode_radio.change(
+            handle_mode_change,
+            [mode_radio],
+            [mode_status, smart_suggestion, mode_status_banner, mode_tip, idle_section, chat_section, generate_section, current_mode_state]
+        )
 
         check_status_btn.click(
             lambda: (mode_manager._get_status_message(), gr.update(value="", visible=False)),
@@ -1448,17 +1596,79 @@ def create_app():
             [mode_status, smart_suggestion],
         )
 
+        # Toast notification helper
+        def show_toast(message, toast_type="info"):
+            """Show a toast notification (returns update for toast component)"""
+            toast_class = f"toast toast-{toast_type}"
+            return gr.update(value=f"**{message}**", visible=True, elem_classes=[toast_class])
+
+        def hide_toast():
+            """Hide toast notification"""
+            return gr.update(value="", visible=False)
+
+        def get_enhanced_progress_html(message="Generating image...", estimated_time=None):
+            """Create enhanced progress bar HTML with animation and estimated time"""
+            time_display = ""
+            if estimated_time:
+                time_display = f'<div class="progress-time">~{estimated_time}s remaining</div>'
+
+            return f"""
+            <div class="generation-progress-enhanced">
+                <div class="progress-info">
+                    <span class="progress-label">{message}</span>
+                    {time_display}
+                </div>
+                <div class="progress-container">
+                    <div class="progress-bar animated" style="width: 100%;"></div>
+                </div>
+            </div>
+            """
+
         # Chat functions
         def user_message(message, history):
-            return "", history + [[message, None]]
+            # Gradio 5 messages format: {"role": "user/assistant", "content": "..."}
+            return "", history + [{"role": "user", "content": message}]
 
         def bot_message(history, model, current_prompt):
-            if not history or not history[-1][0]:
-                return history, current_prompt, "", False
+            # Gradio 5 messages format
+            if not history or not history[-1].get("content"):
+                return history, current_prompt, gr.update(value="", visible=False), hide_toast(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
 
-            message = history[-1][0]
+            # Auto-switch to CHAT mode if needed
+            toast_update = hide_toast()
+            banner_update = gr.update()
+            tip_update = gr.update()
+            idle_vis = gr.update()
+            chat_vis = gr.update()
+            generate_vis = gr.update()
+            mode_state = gr.update()
+
+            if mode_manager.get_mode() != Mode.CHAT:
+                mode_manager.switch_to_chat()
+                vram = vram_monitor.get_vram_usage()
+                vram_text = f"{vram['used_gb']} GB" if vram['available'] else "N/A"
+
+                toast_update = show_toast("🟢 Switching to Chat Mode...", "success")
+                banner_update = gr.update(
+                    value=f"🟢 **CHAT MODE** ({vram_text} VRAM)",
+                    elem_classes=["mode-status-banner", "mode-chat"]
+                )
+                tip_update = gr.update(
+                    value="💡 **Tip:** Develop prompts with Text Chat, or refine images with Vision Chat",
+                    visible=True,
+                    elem_classes=["mode-tip", "mode-tip-chat"]
+                )
+                # Update UI visibility
+                idle_vis = gr.update(visible=False)
+                chat_vis = gr.update(visible=True)
+                generate_vis = gr.update(visible=False)
+                mode_state = "CHAT"
+
+            message = history[-1]["content"]
             response = chat_with_ollama(message, history[:-1], model, current_prompt)
-            history[-1][1] = response
+            # Update last message to include assistant response
+            history[-1] = {"role": "user", "content": message}
+            history.append({"role": "assistant", "content": response})
 
             # Try to extract prompt from response
             new_prompt = current_prompt
@@ -1487,19 +1697,19 @@ def create_app():
                     suggestion_msg = smart_switch.get_suggestion_message(suggested)
                     suggestion_update = gr.update(value=suggestion_msg, visible=True)
 
-            return history, new_prompt, suggestion_update
+            return history, new_prompt, suggestion_update, toast_update, banner_update, tip_update, idle_vis, chat_vis, generate_vis, mode_state
 
         # Wire up chat
         msg.submit(user_message, [msg, chatbot], [msg, chatbot]).then(
             bot_message,
             [chatbot, model_dropdown, current_prompt_state],
-            [chatbot, current_prompt_state, smart_suggestion],
+            [chatbot, current_prompt_state, smart_suggestion, toast_notification, mode_status_banner, mode_tip, idle_section, chat_section, generate_section, current_mode_state],
         ).then(lambda x: x, [current_prompt_state], [prompt_display])
 
         send_btn.click(user_message, [msg, chatbot], [msg, chatbot]).then(
             bot_message,
             [chatbot, model_dropdown, current_prompt_state],
-            [chatbot, current_prompt_state, smart_suggestion],
+            [chatbot, current_prompt_state, smart_suggestion, toast_notification, mode_status_banner, mode_tip, idle_section, chat_section, generate_section, current_mode_state],
         ).then(lambda x: x, [current_prompt_state], [prompt_display])
 
         clear_chat_btn.click(lambda: ([], ""), None, [chatbot, current_prompt_state]).then(
@@ -1508,15 +1718,19 @@ def create_app():
 
         # Vision chat functions
         def vision_user_message(message, history):
-            return "", history + [[message, None]]
+            # Gradio 5 messages format
+            return "", history + [{"role": "user", "content": message}]
 
         def vision_bot_message(history, current_image, current_prompt):
-            if not history or not history[-1][0]:
+            # Gradio 5 messages format
+            if not history or not history[-1].get("content"):
                 return history, current_prompt
 
-            message = history[-1][0]
+            message = history[-1]["content"]
             response = vision_chat_with_ollama(message, history[:-1], current_image, current_prompt)
-            history[-1][1] = response
+            # Update last message to include assistant response
+            history[-1] = {"role": "user", "content": message}
+            history.append({"role": "assistant", "content": response})
 
             # Try to extract prompt from response
             new_prompt = current_prompt
@@ -1565,16 +1779,21 @@ def create_app():
 
         def extract_from_chat(history):
             if not history:
-                return "No chat history to extract from!"
+                return "No chat history to extract from!", hide_toast()
 
             # Get last assistant message
             for h in reversed(history):
                 if h[1] and len(h[1]) > 30:
-                    return h[1]
+                    # Auto-switch to GENERATE mode when extracting prompt
+                    if mode_manager.get_mode() != Mode.GENERATE:
+                        mode_manager.switch_to_generate()
+                        toast = show_toast("✅ Prompt copied and ready to generate!", "success")
+                        return h[1], toast
+                    return h[1], hide_toast()
 
-            return "No suitable prompt found in chat history"
+            return "No suitable prompt found in chat history", hide_toast()
 
-        extract_prompt_btn.click(extract_from_chat, [chatbot], [prompt_display])
+        extract_prompt_btn.click(extract_from_chat, [chatbot], [prompt_display, toast_notification])
 
         # Copy prompt to clipboard (via JS) with toast
         copy_prompt_btn.click(
@@ -1767,8 +1986,44 @@ def create_app():
         # Generation
         def generate_and_store(prompt_text, steps, width, height, seed_value, denoise, input_img):
             """Generate image and store in state and gallery"""
-            # Show progress bar
-            progress_html = '<div class="progress-bar indeterminate"></div>'
+            # Auto-switch to GENERATE mode if needed
+            toast_update = hide_toast()
+            banner_update = gr.update()
+            tip_update = gr.update()
+            idle_vis = gr.update()
+            chat_vis = gr.update()
+            generate_vis = gr.update()
+            mode_state = gr.update()
+
+            if mode_manager.get_mode() != Mode.GENERATE:
+                mode_manager.switch_to_generate()
+                vram = vram_monitor.get_vram_usage()
+                vram_text = f"{vram['used_gb']} GB" if vram['available'] else "N/A"
+
+                toast_update = show_toast("🟠 Switching to Generate Mode...", "warning")
+                banner_update = gr.update(
+                    value=f"🟠 **GENERATE MODE** ({vram_text} VRAM)",
+                    elem_classes=["mode-status-banner", "mode-generate"]
+                )
+                tip_update = gr.update(
+                    value="💡 **Tip:** Click generated images in Gallery to refine them with Vision Chat",
+                    visible=True,
+                    elem_classes=["mode-tip", "mode-tip-generate"]
+                )
+                # Update UI visibility
+                idle_vis = gr.update(visible=False)
+                chat_vis = gr.update(visible=False)
+                generate_vis = gr.update(visible=True)
+                mode_state = "GENERATE"
+
+            # Show enhanced progress bar with estimated time
+            stats = session_stats.get_stats()
+            avg_time = stats.get("avg_time", 0)
+            estimated_time = round(avg_time) if avg_time > 0 else None
+            progress_html = get_enhanced_progress_html(
+                message="🎨 Generating image...",
+                estimated_time=estimated_time
+            )
 
             yield (
                 None,  # image
@@ -1780,6 +2035,13 @@ def create_app():
                 gr.update(value="", visible=False),  # smart_suggestion
                 gr.update(),  # seed_history
                 gr.update(value=progress_html, visible=True),  # progress
+                toast_update,  # toast_notification
+                banner_update,  # mode_status_banner
+                tip_update,  # mode_tip
+                idle_vis,  # idle_section
+                chat_vis,  # chat_section
+                generate_vis,  # generate_section
+                mode_state,  # current_mode_state
             )
 
             image, status, actual_seed, stats = generate_image(
@@ -1815,10 +2077,11 @@ def create_app():
             # Update seed history dropdown
             seed_history_update = gr.update(choices=seed_manager.get_history())
 
-            # Hide progress bar
+            # Hide progress bar and toast
             progress_update = gr.update(value="", visible=False)
+            final_toast = hide_toast()
 
-            yield image, status, image, gallery_images, info, stats, suggestion_update, seed_history_update, progress_update
+            yield image, status, image, gallery_images, info, stats, suggestion_update, seed_history_update, progress_update, final_toast, banner_update, tip_update, idle_vis, chat_vis, generate_vis, mode_state
 
         generate_btn.click(
             generate_and_store,
@@ -1841,6 +2104,13 @@ def create_app():
                 smart_suggestion,
                 seed_history_dropdown,
                 generation_progress,
+                toast_notification,
+                mode_status_banner,
+                mode_tip,
+                idle_section,
+                chat_section,
+                generate_section,
+                current_mode_state,
             ],
         )
 
@@ -1866,6 +2136,13 @@ def create_app():
                 smart_suggestion,
                 seed_history_dropdown,
                 generation_progress,
+                toast_notification,
+                mode_status_banner,
+                mode_tip,
+                idle_section,
+                chat_section,
+                generate_section,
+                current_mode_state,
             ],
         )
 
@@ -1880,11 +2157,11 @@ def create_app():
             lambda: "", None, [current_prompt_state]
         )
 
-        quick_extract_btn.click(extract_from_chat, [chatbot], [prompt_display])
+        quick_extract_btn.click(extract_from_chat, [chatbot], [prompt_display, toast_notification])
 
         # Gallery click to load image into vision chat
         def load_gallery_image(evt: gr.SelectData):
-            """Load clicked gallery image into vision chat"""
+            """Load clicked gallery image into vision chat, close modal, and switch to Vision Chat tab"""
             index = evt.index
             img_data = gallery.get_image_by_index(index)
 
@@ -1896,12 +2173,51 @@ def create_app():
 
                 info_text = f"Loaded image from gallery\nPrompt: {prompt[:100]}...\nSeed: {seed}\nSettings: {settings['width']}x{settings['height']}, {settings['steps']} steps"
 
-                return image, info_text, image  # image for state, info text, image for preview
+                # Auto-switch to Chat mode if needed
+                mode_status_msg = mode_status.value
+                mode_radio_value = mode_radio.value
+                toast_update = hide_toast()
 
-            return None, "Failed to load image", None
+                if mode_manager.get_mode() != Mode.CHAT:
+                    mode_manager.switch_to_chat(preload_model=OLLAMA_VISION_MODEL)
+                    mode_status_msg = mode_manager._get_status_message()
+                    mode_radio_value = "💬 Chat"
+                    toast_update = show_toast("✅ Image loaded - Vision Chat ready!", "success")
+
+                # Switch to Vision Chat tab (index 1 = second tab)
+                tab_update = gr.update(selected=1)
+
+                # Close the gallery accordion
+                modal_update = gr.update(visible=False, open=False)
+
+                return (
+                    image,  # current_image_state
+                    info_text,  # gallery_info
+                    image,  # vision_image_preview
+                    mode_status_msg,  # mode_status
+                    mode_radio_value,  # mode_radio
+                    tab_update,  # chat_tabs
+                    toast_update,  # toast_notification
+                    modal_update,  # gallery_modal
+                    index,  # selected_gallery_index
+                )
+
+            return None, "Failed to load image", None, gr.update(), gr.update(), gr.update(), hide_toast(), gr.update(), -1
 
         session_gallery.select(
-            load_gallery_image, None, [current_image_state, gallery_info, vision_image_preview]
+            load_gallery_image,
+            None,
+            [
+                current_image_state,
+                gallery_info,
+                vision_image_preview,
+                mode_status,
+                mode_radio,
+                chat_tabs,
+                toast_notification,
+                gallery_modal,
+                selected_gallery_index,
+            ],
         )
 
         # Refresh models
@@ -1917,12 +2233,178 @@ def create_app():
 
         shortcuts_btn.click(toggle_shortcuts, [shortcuts_state], [shortcuts_state, shortcuts_help])
 
+        # Gallery accordion handlers
+        def open_gallery():
+            """Open the gallery accordion"""
+            return gr.update(visible=True, open=True)
+
+        def close_gallery():
+            """Close the gallery accordion"""
+            return gr.update(visible=False, open=False)
+
+        gallery_btn.click(open_gallery, None, gallery_modal)
+        close_gallery_btn.click(close_gallery, None, gallery_modal)
+
+        # Theme Settings accordion handlers
+        def open_settings():
+            """Open the theme settings accordion"""
+            return gr.update(visible=True, open=True)
+
+        def close_settings():
+            """Close the theme settings accordion"""
+            return gr.update(visible=False, open=False)
+
+        def apply_theme(mode, scheme, density):
+            """Apply theme settings"""
+            # Map color scheme display name to ID
+            scheme_map = {info["name"]: key for key, info in theme_manager.COLOR_SCHEMES.items()}
+            scheme_id = scheme_map.get(scheme, "default")
+
+            theme_manager.set_mode(mode)
+            theme_manager.set_color_scheme(scheme_id)
+            theme_manager.set_layout_density(density)
+
+            gr.Info(f"✨ Theme applied: {scheme} ({mode} mode, {density} density)")
+            return theme_manager.get_theme_display()
+
+        def reset_theme():
+            """Reset theme to defaults"""
+            theme_manager.reset_to_defaults()
+            gr.Info("🔄 Theme reset to defaults")
+            return (
+                theme_manager.get_mode(),
+                theme_manager.COLOR_SCHEMES[theme_manager.get_color_scheme()]["name"],
+                theme_manager.get_layout_density(),
+                theme_manager.get_theme_display(),
+            )
+
+        settings_btn.click(open_settings, None, settings_modal)
+        close_settings_btn.click(close_settings, None, settings_modal)
+
+        apply_theme_btn.click(
+            apply_theme,
+            [theme_mode, color_scheme, layout_density],
+            theme_display
+        )
+
+        reset_theme_btn.click(
+            reset_theme,
+            None,
+            [theme_mode, color_scheme, layout_density, theme_display]
+        )
+
         # Auto-switch toggle
         def toggle_auto_switch(enabled):
             smart_switch.auto_switch_enabled = enabled
             return enabled
 
         auto_switch_checkbox.change(toggle_auto_switch, [auto_switch_checkbox], None)
+
+        # ====================================================================
+        # PROMPT COMPOSER EVENT HANDLERS
+        # ====================================================================
+
+        # Open/close composer
+        def open_composer():
+            """Open the prompt composer accordion"""
+            return gr.update(visible=True, open=True)
+
+        def close_composer():
+            """Close the prompt composer accordion"""
+            return gr.update(visible=False, open=False)
+
+        composer_btn.click(open_composer, None, composer_modal)
+        close_composer_btn.click(close_composer, None, composer_modal)
+
+        # Tag button clicks - universal handler
+        def add_tag_to_composer(tag_name):
+            """Add a tag to the composer"""
+            # Find the tag object
+            for category_tags in prompt_composer.TAG_LIBRARY.values():
+                for tag in category_tags:
+                    if tag.name == tag_name:
+                        prompt_composer.add_tag(tag)
+                        break
+            return prompt_composer.get_selected_tags_display()
+
+        # Wire up all tag buttons
+        for tag_name, (btn, tag) in tag_buttons.items():
+            btn.click(
+                lambda tn=tag_name: add_tag_to_composer(tn),
+                None,
+                selected_tags_display
+            )
+
+        # Build prompt from tags
+        def build_from_tags():
+            """Build prompt from selected tags"""
+            prompt = prompt_composer.build_prompt()
+            gr.Info("✨ Prompt built from tags!")
+            return prompt
+
+        build_prompt_btn.click(build_from_tags, None, built_prompt)
+
+        # Clear all tags
+        def clear_all_tags():
+            """Clear all selected tags"""
+            prompt_composer.clear_tags()
+            gr.Info("🗑️ All tags cleared")
+            return prompt_composer.get_selected_tags_display(), ""
+
+        clear_tags_btn.click(clear_all_tags, None, [selected_tags_display, built_prompt])
+
+        # Load template
+        def load_template_handler(template_name):
+            """Load a template"""
+            if not template_name:
+                return "", ""
+
+            # Find template by name (template_name includes description)
+            template_name_only = template_name.split(" - ")[0]
+            for template in prompt_composer.get_all_templates():
+                if template.name == template_name_only:
+                    prompt = prompt_composer.load_template(template)
+                    gr.Info(f"📥 Loaded template: {template.name}")
+                    return prompt_composer.get_selected_tags_display(), prompt
+
+            return "", ""
+
+        load_template_btn.click(
+            load_template_handler,
+            [template_selector],
+            [selected_tags_display, built_prompt]
+        )
+
+        # Copy built prompt to main prompt editor
+        def copy_to_main_prompt(built):
+            """Copy built prompt to main prompt editor"""
+            if built:
+                gr.Info("➡️ Prompt copied to editor!")
+                return built
+            return ""
+
+        copy_to_prompt_btn.click(copy_to_main_prompt, [built_prompt], prompt_display)
+
+        # Save custom template
+        def save_custom_template(name, desc, category):
+            """Save current composition as template"""
+            if not name:
+                gr.Warning("Please enter a template name")
+                return gr.update(value="⚠️ Please enter a template name", visible=True)
+
+            try:
+                prompt_composer.save_as_template(name, desc, category)
+                gr.Info(f"💾 Saved template: {name}")
+                return gr.update(value=f"✅ Template saved: {name}", visible=True)
+            except Exception as e:
+                gr.Error(f"Failed to save template: {e}")
+                return gr.update(value=f"❌ Error: {e}", visible=True)
+
+        save_template_btn.click(
+            save_custom_template,
+            [template_name_input, template_desc_input, template_category_input],
+            save_status
+        )
 
         # ====================================================================
         # BATCH QUEUE EVENT HANDLERS
@@ -1988,6 +2470,347 @@ def create_app():
             update_gallery_display,
             [gallery_filter, gallery_sort, favorites_only_check],
             [session_gallery, gallery_info],
+        )
+
+        # ====================================================================
+        # IMAGE ACTION BUTTONS EVENT HANDLERS
+        # ====================================================================
+
+        # Generated image action buttons
+        def start_seed_variations(prompt, steps, width, height):
+            """Generate 4 seed variations of current image"""
+            current_seed = gallery.get_last_seed()
+            if current_seed is None:
+                return show_toast("⚠️ No seed available for variations", "error"), gr.update()
+
+            # Get current prompt
+            current_prompt = prompt or "No prompt"
+
+            # Add 4 variations to queue
+            gen_queue.add_job(
+                prompt=current_prompt,
+                seed=current_seed + 1,
+                steps=steps,
+                width=width,
+                height=height
+            )
+            gen_queue.add_job(
+                prompt=current_prompt,
+                seed=current_seed + 10,
+                steps=steps,
+                width=width,
+                height=height
+            )
+            gen_queue.add_job(
+                prompt=current_prompt,
+                seed=current_seed + 100,
+                steps=steps,
+                width=width,
+                height=height
+            )
+            gen_queue.add_job(
+                prompt=current_prompt,
+                seed=current_seed + 1000,
+                steps=steps,
+                width=width,
+                height=height
+            )
+
+            toast_msg = show_toast(f"✅ Added 4 seed variations to queue (base: {current_seed})", "success")
+            queue_msg = gen_queue.get_status()
+            return toast_msg, queue_msg
+
+        def refine_in_vision(image):
+            """Load current image into Vision Chat"""
+            if image is None:
+                return (
+                    gr.update(),  # vision_image_preview
+                    gr.update(),  # gallery_info
+                    gr.update(),  # mode_radio
+                    gr.update(),  # mode_status
+                    gr.update(),  # chat_tabs
+                    show_toast("⚠️ No image to refine", "error"),  # toast
+                    gr.update(),  # mode_status_banner
+                    gr.update(),  # mode_tip
+                )
+
+            # Switch to Chat mode and Vision Chat tab if needed
+            mode_status_msg = mode_manager._get_status_message()
+            mode_radio_value = "💬 Chat"
+            tab_update = gr.update(selected=1)  # Vision Chat tab
+            toast_update = show_toast("👁️ Opening in Vision Chat...", "success")
+
+            # Get VRAM info
+            vram = vram_monitor.get_vram_usage()
+            vram_text = f"{vram['used_gb']} GB" if vram['available'] else "N/A"
+
+            if mode_manager.get_mode() != Mode.CHAT:
+                mode_manager.switch_to_chat(preload_model=OLLAMA_VISION_MODEL)
+                mode_status_msg = mode_manager._get_status_message()
+                banner_update = gr.update(
+                    value=f"🟢 **CHAT MODE** ({vram_text} VRAM)",
+                    elem_classes=["mode-status-banner", "mode-chat"]
+                )
+                tip_update = gr.update(
+                    value="💡 **Tip:** Use Vision Chat to refine this image with AI guidance",
+                    visible=True,
+                    elem_classes=["mode-tip", "mode-tip-chat"]
+                )
+            else:
+                banner_update = gr.update()
+                tip_update = gr.update()
+
+            # Get image info for gallery
+            if len(gallery.images) > 0:
+                last_image = gallery.images[-1]
+                info_text = f"Loaded into Vision Chat: {last_image.get('prompt', 'Unknown')[:50]}..."
+            else:
+                info_text = "Image loaded"
+
+            return (
+                image,  # vision_image_preview
+                info_text,  # gallery_info
+                mode_radio_value,  # mode_radio
+                mode_status_msg,  # mode_status
+                tab_update,  # chat_tabs
+                toast_update,  # toast
+                banner_update,  # mode_status_banner
+                tip_update,  # mode_tip
+            )
+
+        def toggle_favorite_generated():
+            """Toggle favorite status of last generated image"""
+            last_meta = gallery.get_last_image_metadata()
+            if not last_meta:
+                return show_toast("⚠️ No image to favorite", "error")
+
+            # Get the last image path
+            images = gallery.get_images()
+            if not images:
+                return show_toast("⚠️ No images in gallery", "error")
+
+            last_image_path = images[0][0]  # First image (newest) path
+            is_fav = gallery.toggle_favorite(last_image_path)
+
+            icon = "⭐" if is_fav else "☆"
+            status = "added to" if is_fav else "removed from"
+            return show_toast(f"{icon} Image {status} favorites", "success")
+
+        def copy_seed_to_clipboard():
+            """Copy current seed to clipboard"""
+            current_seed = seed_manager.get_last_seed()
+            if current_seed is None:
+                return show_toast("⚠️ No seed available", "error")
+            return show_toast(f"📋 Seed {current_seed} copied!", "success")
+
+        # Wire up generated image action buttons
+        gen_variations_btn.click(
+            start_seed_variations,
+            [prompt_display, steps_slider, width_slider, height_slider],
+            [toast_notification, queue_status],
+        )
+
+        gen_refine_btn.click(
+            refine_in_vision,
+            [generated_image],
+            [vision_image_preview, gallery_info, mode_radio, mode_status, chat_tabs, toast_notification, mode_status_banner, mode_tip],
+        )
+
+        gen_favorite_btn.click(toggle_favorite_generated, None, toast_notification)
+
+        gen_copy_seed_btn.click(
+            copy_seed_to_clipboard,
+            None,
+            toast_notification,
+            js="(seed) => {const s = String(seed || ''); navigator.clipboard.writeText(s); return s;}"
+        )
+
+        # Image preview modal handlers
+        def open_image_preview(image):
+            """Open full-size preview of generated image"""
+            if image is None:
+                return gr.update(visible=False), gr.update(), gr.update()
+
+            # Get metadata
+            last_meta = gallery.get_last_image_metadata()
+            if last_meta:
+                meta_display = f"""
+                <div class="metadata-row">
+                    <span class="metadata-label">Prompt:</span>
+                    <span class="metadata-value">{last_meta.get('prompt', 'N/A')}</span>
+                </div>
+                <div class="metadata-row">
+                    <span class="metadata-label">Seed:</span>
+                    <span class="metadata-value">{last_meta.get('seed', 'N/A')}</span>
+                </div>
+                <div class="metadata-row">
+                    <span class="metadata-label">Dimensions:</span>
+                    <span class="metadata-value">{last_meta.get('width', 'N/A')} × {last_meta.get('height', 'N/A')}</span>
+                </div>
+                <div class="metadata-row">
+                    <span class="metadata-label">Steps:</span>
+                    <span class="metadata-value">{last_meta.get('steps', 'N/A')}</span>
+                </div>
+                """
+            else:
+                meta_display = "No metadata available"
+
+            return (
+                gr.update(visible=True, open=True),  # accordion
+                image,  # preview_image
+                meta_display,  # preview_metadata
+            )
+
+        def close_image_preview():
+            """Close image preview accordion"""
+            return gr.update(visible=False, open=False)
+
+        # Click on generated image opens preview
+        generated_image.select(
+            open_image_preview,
+            [generated_image],
+            [image_preview_modal, preview_image, preview_metadata],
+        )
+
+        preview_close_btn.click(close_image_preview, None, image_preview_modal)
+
+        # Refine from preview modal
+        preview_refine_btn.click(
+            refine_in_vision,
+            [preview_image],
+            [vision_image_preview, gallery_info, mode_radio, mode_status, chat_tabs, toast_notification, mode_status_banner, mode_tip],
+        ).then(
+            close_image_preview,
+            None,
+            image_preview_modal,
+        )
+
+        # Gallery action button handlers
+        def gallery_toggle_favorite(index):
+            """Toggle favorite status of selected gallery image"""
+            if index < 0:
+                return show_toast("⚠️ Please select an image first", "error"), gr.update(), gr.update()
+
+            images = gallery.get_images()
+            if index >= len(images):
+                return show_toast("⚠️ Image not found", "error"), gr.update(), gr.update()
+
+            image_path = images[index][0]  # Get path from tuple
+            is_fav = gallery.toggle_favorite(image_path)
+
+            # Update gallery display
+            gallery_images, info = update_gallery_display("", "newest", False)
+
+            icon = "⭐" if is_fav else "☆"
+            status = "added to" if is_fav else "removed from"
+            return show_toast(f"{icon} Image {status} favorites", "success"), gallery_images, info
+
+        def gallery_use_img2img(index):
+            """Load selected gallery image into img2img input"""
+            if index < 0:
+                return show_toast("⚠️ Please select an image first", "error"), gr.update()
+
+            img_data = gallery.get_image_by_index(index)
+            if not img_data:
+                return show_toast("⚠️ Image not found", "error"), gr.update()
+
+            return show_toast("🎨 Image loaded for img2img", "success"), img_data["image"]
+
+        def gallery_open_vision(index):
+            """Load selected gallery image into Vision Chat"""
+            if index < 0:
+                return (
+                    show_toast("⚠️ Please select an image first", "error"),
+                    gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                )
+
+            img_data = gallery.get_image_by_index(index)
+            if not img_data:
+                return (
+                    show_toast("⚠️ Image not found", "error"),
+                    gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
+                )
+
+            # Switch to Chat mode and Vision Chat tab if needed
+            mode_status_msg = mode_manager._get_status_message()
+            mode_radio_value = "💬 Chat"
+            tab_update = gr.update(selected=1)
+            toast_update = show_toast("👁️ Opening in Vision Chat...", "success")
+
+            # Get VRAM info
+            vram = vram_monitor.get_vram_usage()
+            vram_text = f"{vram['used_gb']} GB" if vram['available'] else "N/A"
+
+            if mode_manager.get_mode() != Mode.CHAT:
+                mode_manager.switch_to_chat(preload_model=OLLAMA_VISION_MODEL)
+                mode_status_msg = mode_manager._get_status_message()
+                banner_update = gr.update(
+                    value=f"🟢 **CHAT MODE** ({vram_text} VRAM)",
+                    elem_classes=["mode-status-banner", "mode-chat"]
+                )
+                tip_update = gr.update(
+                    value="💡 **Tip:** Use Vision Chat to refine this image with AI guidance",
+                    visible=True,
+                    elem_classes=["mode-tip", "mode-tip-chat"]
+                )
+            else:
+                banner_update = gr.update()
+                tip_update = gr.update()
+
+            # Close gallery accordion
+            modal_update = gr.update(visible=False, open=False)
+
+            return (
+                toast_update,  # toast
+                img_data["image"],  # vision_image_preview
+                mode_radio_value,  # mode_radio
+                mode_status_msg,  # mode_status
+                tab_update,  # chat_tabs
+                modal_update,  # gallery_modal
+                banner_update,  # mode_status_banner
+                tip_update,  # mode_tip
+            )
+
+        def gallery_delete_image(index):
+            """Delete selected gallery image"""
+            if index < 0:
+                return show_toast("⚠️ Please select an image first", "error"), gr.update(), gr.update()
+
+            images = gallery.get_images()
+            if index >= len(images):
+                return show_toast("⚠️ Image not found", "error"), gr.update(), gr.update()
+
+            image_path = images[index][0]
+            gallery.delete_image(image_path)
+
+            # Update gallery display
+            gallery_images, info = update_gallery_display("", "newest", False)
+
+            return show_toast("🗑️ Image deleted", "success"), gallery_images, info
+
+        # Wire up gallery action buttons
+        gallery_favorite_btn.click(
+            gallery_toggle_favorite,
+            [selected_gallery_index],
+            [toast_notification, session_gallery, gallery_info],
+        )
+
+        gallery_img2img_btn.click(
+            gallery_use_img2img,
+            [selected_gallery_index],
+            [toast_notification, input_image],
+        )
+
+        gallery_vision_btn.click(
+            gallery_open_vision,
+            [selected_gallery_index],
+            [toast_notification, vision_image_preview, mode_radio, mode_status, chat_tabs, gallery_modal, mode_status_banner, mode_tip],
+        )
+
+        gallery_delete_btn.click(
+            gallery_delete_image,
+            [selected_gallery_index],
+            [toast_notification, session_gallery, gallery_info],
         )
 
         # ====================================================================

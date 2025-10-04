@@ -130,9 +130,119 @@ This document tracks all planned features, improvements, and phases for the AI I
 
 ---
 
+## ✅ UI/UX Improvements (October 2025) - COMPLETED
+**Status:** Shipped ✓
+**Completion Date:** 2025-10-02
+
+### Combined Chat Mode ✅ COMPLETED
+- [x] **Merged Text + Vision Chat** ✅ SHIPPED
+  - Reduced from 4 modes to 3 (Idle, Chat, Generate)
+  - Text Chat and Vision Chat in tabbed interface
+  - Auto-tab switching when loading gallery images
+  - Better VRAM efficiency with unified mode
+  - Simplified mental model for users
+
+### Modal Gallery ✅ COMPLETED
+- [x] **Gallery as Modal Overlay** ✅ SHIPPED
+  - Moved from embedded to modal overlay
+  - Accessible from header button (any mode)
+  - Auto-close on image selection
+  - Cleaner main interface without scrolling
+  - Professional modal UX
+
+### Visual Mode Indicators ✅ COMPLETED
+- [x] **Color-Coded Mode Feedback** ✅ SHIPPED
+  - Mode status banners (Blue/Green/Orange)
+  - Real-time VRAM display in banner
+  - Active mode button highlighting
+  - Mode-specific contextual tips
+  - Smooth CSS animations (slideInDown, fadeIn, pulseGlow)
+
+### Image Action Buttons ✅ COMPLETED
+- [x] **Generated Image Actions** ✅ SHIPPED
+  - 🔄 Variations - Add 4 seed variations to queue
+  - 👁️ Refine - Open in Vision Chat (auto-switch)
+  - ⭐ Favorite - Toggle favorite status
+  - 📋 Copy Seed - Copy to clipboard
+- [x] **Gallery Actions** ✅ SHIPPED
+  - ⭐ Toggle Favorite - Star/unstar images
+  - 🎨 Use for Img2Img - Load into img2img input
+  - 👁️ Open in Vision Chat - Load with mode switch
+  - 🗑️ Delete - Remove from gallery
+- [x] **Image Preview Modal** ✅ SHIPPED
+  - Full-size image display
+  - Complete metadata (prompt, seed, dimensions, steps)
+  - Quick action buttons
+
+### Auto-Mode Switching ✅ COMPLETED
+- [x] **Seamless Mode Transitions** ✅ SHIPPED
+  - Send message → Auto-switch to Chat mode
+  - Generate image → Auto-switch to Generate mode
+  - Refine image → Auto-switch to Chat/Vision
+  - Toast notifications for all switches
+  - No manual mode selection needed
+
+---
+
+## ✅ UI/UX Polish Phase (October 2025 - Extended) - COMPLETED
+**Status:** Shipped ✓
+**Completion Date:** 2025-10-03
+
+### Phase 1: Quick Wins ✅ COMPLETED
+- [x] **Enhanced Toast Notifications** ✅ SHIPPED
+  - Title support and custom styling
+  - Progress bar animations
+  - 4 notification types (info, success, warning, error)
+  - Dark mode support
+  - Close button and auto-dismiss
+
+- [x] **Better Loading States** ✅ SHIPPED
+  - Skeleton loaders with shimmer animations
+  - Enhanced progress indicators
+  - Estimated time remaining display
+  - Smooth transitions and animations
+
+- [x] **Accordion Reorganization** ✅ SHIPPED
+  - Reduced from 6 to 4 accordions (33% reduction)
+  - Tabbed interface for related settings
+  - Improved information hierarchy
+  - Better use of vertical space
+
+### Phase 2a: Themes & Customization ✅ COMPLETED
+- [x] **Theme System** ✅ SHIPPED
+  - Dark/Light/Auto mode with system detection
+  - 5 color schemes (Default, Ocean, Forest, Sunset, Monochrome)
+  - 3 layout densities (Compact, Comfortable, Spacious)
+  - CSS variables for dynamic theming
+  - Preference persistence (theme_preferences.json)
+  - Live theme preview and application
+
+### Phase 2b: Prompt Composer ✅ COMPLETED
+- [x] **Tag Library System** ✅ SHIPPED
+  - 60+ curated tags in 7 categories
+  - Categories: Subject, Style, Lighting, Mood, Camera, Quality, Colors
+  - Visual tag browser with tabs
+  - Click-to-add tag interface
+
+- [x] **Template System** ✅ SHIPPED
+  - 6 pre-built professional templates
+  - Custom template creation and saving
+  - Template persistence across sessions
+  - Category filtering
+  - One-click template loading
+
+- [x] **Smart Prompt Building** ✅ SHIPPED
+  - Automatic tag ordering by category
+  - Professional prompt formatting
+  - Selected tags display
+  - One-click copy to prompt editor
+  - Build/Clear/Save workflow
+
+---
+
 ## 🔮 Phase 3: Advanced ComfyUI Integration (IN PROGRESS)
 **Status:** Foundation Complete + Img2img Shipped ✓
-**Latest Update:** 2025-09-30
+**Latest Update:** 2025-10-02
 
 ### Workflow Management ✅ COMPLETED
 - [x] **Multiple Workflow Support** ✅ SHIPPED
@@ -468,5 +578,5 @@ Want to implement a feature from this roadmap? Here's how:
 
 ---
 
-**Last Updated:** 2025-09-30
-**Version:** Phase 2 Complete + QOL Features
+**Last Updated:** 2025-10-03
+**Version:** Phase 2 Complete + QOL Features + UI/UX Polish (Themes, Prompt Composer)

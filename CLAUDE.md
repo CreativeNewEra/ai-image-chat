@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AI Image Chat is a Gradio application for AI-assisted image generation using ComfyUI + FLUX with Ollama for chat-based prompt refinement. The system uses a 4-mode architecture (Idle, Text Chat, Vision Chat, Generate) to manage GPU VRAM across three distinct workloads: text LLM chat, vision LLM chat, and image generation.
+AI Image Chat is a Gradio application for AI-assisted image generation using ComfyUI + FLUX with Ollama for chat-based prompt refinement. The system uses a **3-mode architecture** (Idle, Chat, Generate) to manage GPU VRAM, with Text Chat and Vision Chat combined into tabbed interface within Chat mode.
 
 **Target System:**
 - Laptop: nobara-laptop (192.168.1.175)
@@ -12,6 +12,26 @@ AI Image Chat is a Gradio application for AI-assisted image generation using Com
 - OS: Nobara Linux
 - ComfyUI: `/home/ant/AI/ComfyUI`
 - FLUX Finetune: `unstableEvolution_Fp811GB.safetensors`
+
+## Quick Reference
+
+**Most commonly used commands:**
+
+```bash
+# Start services
+./scripts/start_comfy.sh      # Start ComfyUI (Terminal 1)
+./scripts/start_app.sh         # Start app (Terminal 2)
+
+# Development
+make check                     # Run all checks (format + lint + test)
+make test                      # Run tests
+make coverage                  # Test coverage report
+bash scripts/setup-dev.sh      # Setup dev environment
+
+# Configuration
+cp .env.example .env           # Create environment config
+nano .env                      # Edit configuration
+```
 
 ## Key Commands
 
@@ -31,6 +51,10 @@ python app.py
 
 # Or via script:
 ./scripts/start_app.sh
+
+# Check if services are running
+curl http://localhost:11434/api/tags  # Ollama
+curl http://localhost:8188/system_stats  # ComfyUI
 ```
 
 ### Access URLs
@@ -40,21 +64,37 @@ python app.py
 ### Dependencies
 
 ```bash
+# Install production dependencies
 pip install -r requirements.txt
-# Installs: gradio, requests, pillow, websocket-client
+
+# Install development dependencies (includes testing, linting, formatting)
+pip install -r requirements-dev.txt
+
+# Or use make commands
+make install         # Production only
+make install-dev     # Development environment
+
+# Quick dev setup with pre-commit hooks
+bash scripts/setup-dev.sh
 ```
 
 ### Testing
 
 ```bash
-# Unit tests for core modules
-pytest tests/test_new_features.py          # Phase 2.5 features
-pytest tests/test_phase25_completion.py    # Phase 2.5 completion tests
-pytest tests/test_workflow_manager.py      # Workflow manager tests
-pytest tests/test_comprehensive.py         # Comprehensive integration tests
-
 # Run all tests
-pytest tests/
+pytest
+
+# Run tests with coverage
+make coverage
+
+# Run specific test file
+pytest test_workflow_manager.py
+pytest test_comprehensive.py
+
+# Run tests by marker
+pytest -m unit                 # Unit tests only
+pytest -m integration          # Integration tests only
+pytest -m "not slow"           # Exclude slow tests
 
 # Manual testing workflow
 # 1. Start app → Switch to Chat mode → Verify Ollama loads
@@ -68,16 +108,28 @@ pytest tests/
 
 ### Core Components
 
-**`app.py`** (~2,000 lines, 65KB)
-- Main Gradio application
-- UI layout and event handlers
+**`app.py`** (~2,500 lines, 90KB)
+- Main Gradio application entry point
+- Event handler wiring and business logic
 - Ollama chat integration functions
-- Image generation workflow
-- Four operation modes with explicit switching
-- Workflow manager integration
-- Batch queue and gallery management
+- Image generation workflow orchestration
+- Three operation modes with explicit switching (Idle, Chat, Generate)
+- **Visual mode indicators** with color-coded banners and tips
+- **Image action buttons** for quick operations
+- **Auto-mode switching** with toast notifications
+- **Primary focus: Event handlers and application logic**
+- **UI components extracted to ui/components/ module**
 
-**`core/`** (modular architecture - **11** business logic classes + exceptions)
+**`ui/components/`** (modular UI architecture - **6** component builders)
+- `mode_selector.py`: Mode selection radio buttons with status display (96 lines)
+- `chat_interface.py`: Text Chat and Vision Chat tabbed interface (141 lines)
+- `generation_panel.py`: Generation controls, settings, workflow selector, **image action buttons** (475 lines)
+- `gallery_view.py`: Session gallery with filtering and sorting (105 lines)
+- `theme_settings.py`: Theme customization panel with live preview (110 lines)
+- `prompt_composer_panel.py`: Tag browser and template library UI (200 lines)
+- **Benefits:** Reusable components, better maintainability, clear separation of concerns
+
+**`core/`** (modular architecture - **13** business logic classes + exceptions)
 - `mode_manager.py`: Mode switching and VRAM management
 - `image_gallery.py`: Session storage with auto-save, filtering, sorting, favorites
 - `vram_monitor.py`: Real-time GPU VRAM monitoring
@@ -88,7 +140,15 @@ pytest tests/
 - `smart_switch.py`: Context-aware mode suggestions
 - `generation_queue.py`: Batch generation queue management
 - `workflow_manager.py`: Multiple workflow support with categories
+- `theme_manager.py`: UI theme system with 5 color schemes and 3 densities
+- `prompt_composer.py`: Tag-based prompt building with 60+ tags and templates
 - `exceptions.py`: Custom exception hierarchy for error handling
+
+**`static/`** (static assets for enhanced UI/UX)
+- `css/styles.css`: Central stylesheet with CSS variables, themes, animations (500 lines)
+- `js/toast.js`: Enhanced toast notification system with progress bars
+- `js/keyboard_shortcuts.js`: Keyboard shortcut handlers (Phase 2.5)
+- `js/main.js`: JavaScript module initialization
 
 **`utils/`** (helper functions)
 - `image_utils.py`: PIL/base64 image conversion utilities
@@ -116,8 +176,8 @@ pytest tests/
 The application operates in exactly one mode at a time:
 
 ```
-                    ┌─→ CHAT (~5 GB llama3.1)
-IDLE (0 GB) ←→ ───┼─→ VISION (~7 GB qwen2.5vl)
+                    ┌─→ CHAT (~5-7 GB, text or vision model)
+IDLE (0 GB) ←→ ───┤
                     └─→ GENERATE (~12 GB ComfyUI+FLUX)
 ```
 
@@ -125,25 +185,26 @@ IDLE (0 GB) ←→ ───┼─→ VISION (~7 GB qwen2.5vl)
 - Unloads Ollama via `keep_alive=0`
 - Clears CUDA cache with `torch.cuda.empty_cache()`
 - Starting state, used for transitions
+- Visual: 🔵 Blue banner with "IDLE MODE"
 
-**CHAT Mode (Text):**
-- Warm-starts Ollama to load text model to GPU
+**CHAT Mode (Combined Text + Vision):**
+- Warm-starts Ollama to load text or vision model to GPU
+- **Text Chat Tab:** Uses llama3.1 (~5 GB) for prompt development
+- **Vision Chat Tab:** Uses qwen2.5vl (~7 GB) for image refinement
 - Uses Ollama `/api/chat` endpoint with conversation history
 - Extracts prompts from responses (quotes or descriptive text)
 - `keep_alive=5m` to keep model loaded
-
-**VISION Mode:**
-- Warm-starts Ollama to load vision model to GPU
-- Sends image + text to `/api/chat` with base64 encoded image
-- Image context provided to understand refinement requests
-- Extracts refined prompts from vision model responses
+- Visual: 🟢 Green banner with "CHAT MODE"
+- **Auto-switching:** Clicking gallery images auto-switches to Vision Chat tab
 
 **GENERATE Mode:**
-- Unloads Ollama first (if coming from CHAT or VISION)
+- Unloads Ollama first (if coming from CHAT)
 - Requires ComfyUI running externally
 - Modifies workflow JSON at runtime
 - Queues prompt and polls for completion
 - Auto-saves images with metadata to `./outputs/`
+- Visual: 🟠 Orange banner with "GENERATE MODE"
+- **Image action buttons:** Variations, Refine, Favorite, Copy Seed
 
 ### Workflow Processing
 
@@ -176,17 +237,34 @@ The system prevents VRAM conflicts through explicit mode switching rather than a
 
 ## Configuration Points
 
+The project uses environment variables for configuration. Copy `.env.example` to `.env` and customize:
+
+```bash
+cp .env.example .env
+nano .env  # Edit configuration
+```
+
 ### Changing Chat Model
 
-Edit `config.py`:
-```python
-OLLAMA_CHAT_MODEL = "mistral:7b"  # Faster, smaller
+Edit `.env` or `config.py`:
+```bash
+# In .env
+OLLAMA_CHAT_MODEL=mistral:7b  # Faster, smaller
+
+# Or in config.py
+OLLAMA_CHAT_MODEL = os.getenv("OLLAMA_CHAT_MODEL", "mistral:7b")
 ```
 
 ### Changing Generation Defaults
 
-Edit `config.py`:
-```python
+Edit `.env` or `config.py`:
+```bash
+# In .env (if supported)
+DEFAULT_WIDTH=768
+DEFAULT_HEIGHT=768
+DEFAULT_STEPS=15
+
+# Or in config.py
 DEFAULT_WIDTH = 768
 DEFAULT_HEIGHT = 768
 DEFAULT_STEPS = 15  # Faster iterations
@@ -195,14 +273,20 @@ DEFAULT_STEPS = 15  # Faster iterations
 ### Using Different Finetune
 
 1. Place model in `/home/ant/AI/ComfyUI/models/diffusion_models/`
-2. Edit `config.py`:
-```python
-FINETUNE_NAME = "your_model.safetensors"
+2. Edit `.env`:
+```bash
+FINETUNE_NAME=your_model.safetensors
 ```
 
 ### Network Configuration
 
 The app binds to `0.0.0.0:7860` for LAN access. ComfyUI must be started with `--listen` flag for network access.
+
+Configure in `.env`:
+```bash
+COMFYUI_API=http://localhost:8188
+OLLAMA_API=http://localhost:11434/api
+```
 
 ## Common Issues
 
@@ -240,6 +324,38 @@ The app binds to `0.0.0.0:7860` for LAN access. ComfyUI must be started with `--
 - See PHASE3_TROUBLESHOOTING.md for details
 
 ## Development Guidelines
+
+### Development Workflow Commands
+
+The project includes a `Makefile` with convenient commands for common development tasks:
+
+```bash
+# Code Quality
+make format           # Format code with Black
+make lint             # Lint and auto-fix with Ruff
+make lint-check       # Lint without auto-fix (check only)
+make type-check       # Run mypy type checking
+
+# Testing
+make test             # Run all tests
+make test-unit        # Run unit tests only
+make test-integration # Run integration tests only
+make coverage         # Generate coverage report (opens htmlcov/index.html)
+
+# Combined
+make check            # Run format + lint + type-check + test
+make all              # Same as 'make check'
+
+# Cleanup
+make clean            # Remove __pycache__, .pytest_cache, coverage files
+
+# Installation
+make install          # Install production dependencies
+make install-dev      # Install development dependencies
+
+# Help
+make help             # Show all available commands
+```
 
 ### Code Quality & Formatting
 
@@ -343,10 +459,28 @@ See **[CONTRIBUTING.md](./CONTRIBUTING.md)** for complete code style guide.
 
 ```
 ai-image-chat/
-├── app.py                      # Main Gradio application (~2000 lines, 65KB)
+├── app.py                      # Main Gradio application (~1,670 lines)
 ├── comfyui_api.py             # ComfyUI API bridge (~350 lines)
-├── config.py                  # Configuration (130 lines)
-├── core/                      # Core business logic modules (11 classes + exceptions)
+├── config.py                  # Configuration (~160 lines)
+├── ui/                        # UI components module (NEW - modular UI architecture)
+│   ├── __init__.py           # Module exports
+│   └── components/           # Reusable UI component builders
+│       ├── __init__.py       # Component exports
+│       ├── mode_selector.py  # Mode selection & status (96 lines)
+│       ├── chat_interface.py # Text & Vision chat tabs (141 lines)
+│       ├── generation_panel.py # Generation controls & settings (440 lines)
+│       ├── gallery_view.py   # Gallery with filters & sorting (105 lines)
+│       ├── theme_settings.py # Theme customization panel (110 lines)
+│       ├── prompt_composer_panel.py # Prompt composer UI (200 lines)
+│       └── README.md         # Component documentation
+├── static/                    # Static assets (NEW - external JS/CSS)
+│   ├── css/
+│   │   └── styles.css        # Custom styling, themes, animations (500 lines)
+│   └── js/                   # JavaScript modules
+│       ├── keyboard_shortcuts.js # Keyboard shortcuts (fixed with stopPropagation)
+│       ├── toast.js          # Toast notification system (enhanced)
+│       └── main.js           # Entry point, module initialization
+├── core/                      # Core business logic modules (13 classes + exceptions)
 │   ├── __init__.py           # Module exports
 │   ├── vram_monitor.py       # GPU VRAM monitoring
 │   ├── session_stats.py      # Generation statistics
@@ -358,6 +492,8 @@ ai-image-chat/
 │   ├── image_gallery.py      # Image gallery management (enhanced)
 │   ├── generation_queue.py   # Batch generation queue
 │   ├── workflow_manager.py   # Multiple workflow support (Phase 3)
+│   ├── theme_manager.py      # UI theme and customization (NEW)
+│   ├── prompt_composer.py    # Tag-based prompt building (NEW)
 │   └── exceptions.py         # Custom exception hierarchy
 ├── utils/                     # Utility functions
 │   ├── __init__.py           # Module exports
@@ -370,16 +506,17 @@ ai-image-chat/
 │       ├── flux_img2img.json              # Default image-to-image workflow shipped with repo
 │       └── flux_img2img_meta.json         # Metadata consumed by workflow manager
 ├── scripts/                   # Development scripts
-│   └── setup-dev.sh           # Development environment setup
+│   ├── setup-dev.sh           # Development environment setup
+│   ├── start_comfy.sh         # ComfyUI launcher script
+│   ├── start_app.sh           # App launcher script
+│   └── check_code.sh          # Code quality checker
 ├── requirements.txt           # Python dependencies
 ├── requirements-dev.txt       # Development dependencies
 ├── pyproject.toml             # Tool configuration (black, ruff, pytest, mypy)
 ├── .pre-commit-config.yaml    # Pre-commit hooks configuration
+├── .env.example               # Environment variables template
 ├── Makefile                   # Development commands
 ├── flux1_krea_dev.json        # Legacy workflow file (only needed if manually copying older setups)
-├── start_comfy.sh             # ComfyUI launcher script
-├── start_app.sh               # App launcher script
-├── check_code.sh              # Code quality checker
 ├── test_new_features.py       # Core feature tests
 ├── test_buttons.py            # Button functionality tests
 ├── test_phase25_completion.py # Phase 2.5 completion tests
@@ -387,6 +524,8 @@ ai-image-chat/
 ├── test_comprehensive.py      # Comprehensive integration tests
 ├── outputs/                   # Generated images (auto-created)
 ├── prompt_history.json        # Saved prompts
+├── prompt_templates.json      # Custom prompt templates (auto-created)
+├── theme_preferences.json     # UI theme settings (auto-created)
 ├── .gitignore                # Git ignore rules
 ├── README.md                 # User guide
 ├── QUICKSTART.md             # Quick setup guide
@@ -394,43 +533,87 @@ ai-image-chat/
 ├── CONTRIBUTING.md           # Contributor guide & code style
 ├── CLAUDE.md                 # This file - Developer guide
 ├── TROUBLESHOOTING.md        # Issue tracking & solutions
-├── PHASE3_TROUBLESHOOTING.md # Phase 3 specific troubleshooting
-├── BEST_PRACTICES.md         # Code quality recommendations
 ├── ROADMAP.md                # Feature planning
-├── QUICK_REFERENCE.md        # Command cheat sheet
-├── REFACTORING_SUMMARY.md    # Modularization details
-├── CURRENT_STATUS.md         # Current development status
-├── PHASE3_PROGRESS.md        # Phase 3 progress tracking
-└── PHASE25_COMPLETION_SUMMARY.md # Phase 2.5 completion summary
+├── docs/                      # Documentation directory
+│   ├── PHASE1_UI_IMPROVEMENTS.md    # UI Polish Phase 1 (toasts, loading, accordions)
+│   ├── PHASE2A_THEMES.md            # Theme system documentation
+│   ├── PHASE2B_PROMPT_COMPOSER.md   # Prompt composer guide
+│   └── archive/               # Historical documentation
+│       ├── PHASE3_TROUBLESHOOTING.md # Phase 3 specific troubleshooting
+│       ├── BEST_PRACTICES.md         # Code quality recommendations
+│       ├── QUICK_REFERENCE.md        # Command cheat sheet
+│       ├── REFACTORING_SUMMARY.md    # Modularization details
+│       ├── CURRENT_STATUS.md         # Current development status
+│       ├── PHASE3_PROGRESS.md        # Phase 3 progress tracking
+│       └── PHASE25_COMPLETION_SUMMARY.md # Phase 2.5 completion summary
 ```
 
-## Modular Architecture (Phases 2.5 & 3)
+## Modular Architecture (Phases 2.5, 3 & UI Refactoring)
 
-**Last Updated:** 2025-09-30
-**Goal:** Improve maintainability, add Phase 2.5 polish, and enable Phase 3 advanced features
+**Last Updated:** 2025-10-03
+**Goal:** Improve maintainability, add Phase 2.5 polish, enable Phase 3 features, modular UI, and UI/UX polish
 
 ### Changes:
-- Enhanced app.py to ~2,000 lines (added batch queue, gallery features, workflow manager)
-- Created `core/` module with **11** business logic classes + **custom exception hierarchy**
-- Enhanced `image_gallery.py` with filtering, sorting, favorites, and deletion
-- Added `generation_queue.py` for batch processing
-- Added `workflow_manager.py` for multiple workflow support (Phase 3)
-- Added `exceptions.py` with 8 custom exception classes for better error handling
-- Created `workflows/` directory structure with category organization
-- Enhanced `comfyui_api.py` with `load_workflow_from_data()` method
-- Created `utils/` module for helper functions
-- Added comprehensive type hints and docstrings
-- Zero breaking changes - fully backward compatible
-- **100% test coverage** for new features
+- **UI Components Extraction (2025-10-01):**
+  - Created `ui/components/` module with **6** reusable UI component builders
+  - Reduced app.py from ~2,000 to ~1,800 lines (264 net line reduction)
+  - Extracted mode selector, chat interface, generation panel, gallery view, theme settings, and prompt composer
+  - All components return dictionaries for flexible access
+  - Comprehensive docstrings with parameter/return documentation
+
+- **UI/UX Polish (2025-10-03 - NEW):**
+  - **Enhanced Toast System:** Title support, progress bars, 4 notification types, dark mode
+  - **Loading States:** Skeleton loaders, enhanced progress with time estimates, smooth animations
+  - **Theme System:** Dark/Light/Auto modes, 5 color schemes, 3 layout densities, CSS variables
+  - **Prompt Composer:** 60+ tags in 7 categories, template library, smart ordering, custom templates
+  - **Accordion Reorganization:** Reduced from 6 to 4 accordions with tabbed interface
+  - **CSS Framework:** Central styles.css with animations, variables, and responsive design
+
+- **Business Logic (Phases 2.5 & 3):**
+  - Created `core/` module with **13** business logic classes + **custom exception hierarchy**
+  - Enhanced `image_gallery.py` with filtering, sorting, favorites, and deletion
+  - Added `generation_queue.py` for batch processing
+  - Added `workflow_manager.py` for multiple workflow support (Phase 3)
+  - Added `theme_manager.py` for UI customization and preferences
+  - Added `prompt_composer.py` for tag-based prompt building
+  - Added `exceptions.py` with 8 custom exception classes for better error handling
+  - Created `workflows/` directory structure with category organization
+  - Enhanced `comfyui_api.py` with `load_workflow_from_data()` method
+  - Created `utils/` module for helper functions
+
+- **Code Quality:**
+  - Added comprehensive type hints and docstrings
+  - Zero breaking changes - fully backward compatible
+  - **100% test coverage** for new features
+  - Professional CSS with animations and responsive design
 
 ### Importing Modules:
 ```python
+# Import UI components
+from ui.components import (
+    create_mode_selector,
+    create_chat_interface,
+    create_generation_panel,
+    create_gallery_view,
+    create_theme_settings,
+    create_prompt_composer
+)
+
 # Import from core
-from core import VRAMMonitor, Mode, ModeManager, WorkflowManager
+from core import (
+    VRAMMonitor,
+    Mode,
+    ModeManager,
+    WorkflowManager,
+    ThemeManager,
+    PromptComposer
+)
 
 # Or import specific module
 from core.vram_monitor import VRAMMonitor
 from core.workflow_manager import WorkflowManager, Workflow, WorkflowMetadata
+from core.theme_manager import ThemeManager, ThemePreferences
+from core.prompt_composer import PromptComposer, PromptTag, PromptTemplate
 from utils import pil_to_base64
 
 # Import custom exceptions
@@ -518,11 +701,12 @@ All custom exceptions are documented in `core/exceptions.py` with:
 - Usage examples
 
 ### Benefits:
-- **Maintainability:** Single responsibility per module
-- **Testability:** Classes can be unit tested independently
-- **Readability:** Easier to find and understand code
-- **Scalability:** Ready for Phase 3 features
-- **Flexibility:** Multiple workflows, batch processing, advanced gallery
+- **Maintainability:** Single responsibility per module, clear separation of UI and logic
+- **Testability:** Classes and components can be unit tested independently
+- **Readability:** Easier to find and understand code, organized by responsibility
+- **Scalability:** Ready for Phase 3+ features with modular architecture
+- **Reusability:** UI components can be reused or customized without touching app.py
+- **Flexibility:** Multiple workflows, batch processing, advanced gallery, modular UI
 - **Error Handling:** Custom exceptions for better debugging and user feedback
 
 See **[docs/archive/REFACTORING_SUMMARY.md](./docs/archive/REFACTORING_SUMMARY.md)** and **[docs/archive/PHASE3_PROGRESS.md](./docs/archive/PHASE3_PROGRESS.md)** for complete details.
@@ -669,12 +853,12 @@ See `core/workflow_manager.py` for implementation.
 - ✅ Auto-refresh on filter/sort changes
 - 📝 **Location:** `core/image_gallery.py`, integrated in `app.py`
 
-**Keyboard Shortcuts:** ⚠️ DISABLED (Known Issue)
-- ⚠️ Custom JavaScript keyboard event handler **DISABLED**
-- ⚠️ Causes button click interference - see TROUBLESHOOTING.md Issue #1
-- ✅ Implementation exists but commented out in app.py
-- ❌ Needs refactoring to use `stopPropagation()` instead of `preventDefault()`
-- 📝 **TODO:** Fix JavaScript to not block button clicks
+**Keyboard Shortcuts:** ⚠️ DISABLED (Gradio 5 Compatibility Issue - 2025-10-01)
+- ✅ Implemented in `static/js/keyboard_shortcuts.js` with proper `stopPropagation()`
+- ❌ Temporarily disabled due to Gradio 5 static file serving changes
+- ⚠️ External JS modules cannot be loaded using `/file=` path in Gradio 5
+- 📝 All functionality still accessible via mouse clicks (no features lost)
+- 📝 See `GRADIO5_MIGRATION.md` for details and future fix options
 
 **Model Status Indicators:** ✅ COMPLETED
 - ✅ VRAMMonitor class with nvidia-smi integration
@@ -755,15 +939,56 @@ See `core/workflow_manager.py` for implementation.
 - [ ] **Upscaling Pipeline** - Built-in upscaler, tiled upscaling, face restoration
 - [ ] **Animation Support** - Frame-by-frame generation, AnimateDiff integration
 
+## UI/UX Improvements (October 2025) ✅ COMPLETE
+
+**Completion Date:** 2025-10-02
+
+### Combined Chat Mode
+- ✅ Merged Text Chat and Vision Chat into single mode with tabs
+- ✅ Reduced from 4 modes to 3 (Idle, Chat, Generate)
+- ✅ Auto-tab switching when loading images from gallery
+- ✅ Better VRAM efficiency with unified chat mode
+- 📝 **Documentation:** `COMBINED_CHAT_MODE.md`
+
+### Modal Gallery
+- ✅ Gallery moved from embedded to modal overlay
+- ✅ Accessible from any mode via header button
+- ✅ Auto-close on image selection
+- ✅ Cleaner main interface without vertical scrolling
+- 📝 **Documentation:** `MODAL_GALLERY.md`
+
+### Visual Mode Indicators
+- ✅ Color-coded mode status banners (Blue/Green/Orange)
+- ✅ Real-time VRAM display in banner
+- ✅ Active mode button highlighting with gradients
+- ✅ Mode-specific contextual tips
+- ✅ Smooth CSS animations (slideInDown, fadeIn, pulseGlow)
+- 📝 **Documentation:** `VISUAL_MODE_INDICATORS.md`
+
+### Image Action Buttons
+- ✅ **Generated Image Actions:** Variations, Refine, Favorite, Copy Seed
+- ✅ **Gallery Actions:** Toggle Favorite, Use for Img2Img, Open in Vision Chat, Delete
+- ✅ **Image Preview Modal:** Full-size preview with metadata and actions
+- ✅ One-click seed variations (adds 4 jobs to queue)
+- ✅ Auto-mode switching for refine operations
+- 📝 **Documentation:** `IMAGE_ACTION_BUTTONS.md`
+
+### Auto-Mode Switching
+- ✅ Send message → Auto-switch to Chat mode
+- ✅ Generate image → Auto-switch to Generate mode
+- ✅ Toast notifications for all mode changes
+- ✅ Seamless workflow without manual mode selection
+
 ## Current Development Status
 
 **Phase 2:** ✅ **COMPLETE**
 **Phase 2.5:** ✅ **COMPLETE**
 **Phase 3 Foundation:** ✅ **COMPLETE** (Workflow Manager + Img2img)
+**UI/UX Improvements:** ✅ **COMPLETE** (October 2025)
 **Phase 3 Advanced:** 🚧 **IN PROGRESS** (ControlNet, Inpainting, LoRA, Upscaling, Animation)
 
 **Status:** 🟢 **PRODUCTION READY**
-**Latest Feature:** Img2img Mode (2025-09-30)
+**Latest Feature:** Image Action Buttons + Visual Mode Indicators (2025-10-02)
 **Next Recommended Feature:** ControlNet Integration or Inpainting
 
 See **[docs/archive/CURRENT_STATUS.md](./docs/archive/CURRENT_STATUS.md)** for detailed status and recommendations.
@@ -790,9 +1015,9 @@ Based on **[ROADMAP.md](./ROADMAP.md)**, remaining features include:
 
 ---
 
-**Last Updated:** 2025-09-30 (Evening - Img2img Complete)
-**Current Phase:** Phase 3 Foundation + Img2img Complete
-**Total Lines of Code:** ~3,700+ (core functionality + img2img)
+**Last Updated:** 2025-10-03 (UI/UX Polish Complete - Themes + Prompt Composer)
+**Current Phase:** Phase 3 Foundation + UI/UX Improvements + UI/UX Polish Complete
+**Total Lines of Code:** ~5,500+ (core functionality + img2img + UI improvements + themes + composer)
 **Test Coverage:** Comprehensive unit and integration tests
 **Production Status:** ✅ Ready for deployment
-**Latest Addition:** Img2img mode with FLUX support
+**Latest Addition:** Theme system (5 color schemes, dark mode), Prompt Composer (60+ tags, templates), Enhanced toasts, Loading states

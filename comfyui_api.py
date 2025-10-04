@@ -348,9 +348,11 @@ class ComfyUIBridge:
         Returns:
             tuple: (modified_workflow, actual_seed)
         """
+        # Note: workflow should already be loaded by generate_image() before calling this
+        # This is just a safety fallback
         if not self.workflow:
-            if not self.load_workflow():
-                return None, None
+            logger.error("modify_prompt called without workflow loaded!")
+            return None, None
 
         # Make a copy to avoid modifying original
         workflow = json.loads(json.dumps(self.workflow))

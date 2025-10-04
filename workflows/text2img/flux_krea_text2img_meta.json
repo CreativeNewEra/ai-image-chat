@@ -1,7 +1,7 @@
 {
   "name": "FLUX Krea Text2Image",
   "description": "Default FLUX text-to-image workflow with Krea optimizations. Uses unstableEvolution finetune with dual CLIP loaders and simple sampler.",
-  "category": "Text2Image",
+  "category": "text2img",
   "tags": [
     "flux",
     "text2img",

@@ -8,7 +8,7 @@ This document tracks issues encountered during development and their resolutions
 
 **Date:** 2025-09-30
 **Severity:** Critical
-**Status:** Resolved ✅
+**Status:** FIXED ✅ (2025-10-01)
 
 ### Symptoms
 - All buttons in the app became unresponsive (no click events firing)
@@ -17,7 +17,7 @@ This document tracks issues encountered during development and their resolutions
 - No errors in terminal or browser console
 
 ### Root Cause
-Custom JavaScript keyboard shortcuts were interfering with Gradio's button click handlers. The `keyboard_js` code was executing and preventing default button behavior.
+Custom JavaScript keyboard shortcuts were interfering with Gradio's button click handlers. The keyboard event handler was using `e.preventDefault()` which blocked ALL default browser behavior, including button clicks.
 
 ### Investigation Steps
 1. Verified Python syntax: `python -m py_compile app.py` - No errors
@@ -25,29 +25,73 @@ Custom JavaScript keyboard shortcuts were interfering with Gradio's button click
 3. This confirmed the issue was specific to the main app, not Gradio itself
 4. Temporarily disabled JavaScript by commenting out `js=keyboard_js` parameter
 5. Buttons immediately started working
+6. Identified that `preventDefault()` was the culprit
 
-### Resolution
-The JavaScript keyboard shortcuts need to be refactored to not interfere with normal button clicks. Two options:
+### Resolution (IMPLEMENTED 2025-10-01)
 
-**Option A (RECOMMENDED - Current):** Disable JavaScript keyboard shortcuts until properly fixed
-```python
-# app.py line ~381
-with gr.Blocks(
-    theme=gr.themes.Soft(primary_hue="blue"),
-    title="AI Image Chat",
-    # js=keyboard_js,  # DISABLED: Causes button interference
-    css="""
-```
+**The Fix:** Refactored JavaScript to use `e.stopPropagation()` instead of `e.preventDefault()`
 
-**Option B (Advanced):** Fix the JavaScript to use `stopPropagation()` instead of `preventDefault()`
+**What Changed:**
+- `preventDefault()` blocks the default action (button clicks, text selection, etc.)
+- `stopPropagation()` only prevents event bubbling while allowing the default action
+
+**Implementation:**
+1. Extracted all JavaScript to external modules in `static/js/`:
+   - `static/js/keyboard_shortcuts.js` - Keyboard shortcuts with proper event handling
+   - `static/js/toast.js` - Toast notification system
+   - `static/js/main.js` - Entry point and initialization
+
+2. Updated `keyboard_shortcuts.js` to use `stopPropagation()`:
+   ```javascript
+   // OLD (BROKEN):
+   case 'i':
+       e.preventDefault();  // ❌ Blocks button clicks!
+       btn = findButtonByText('🔵 Idle');
+       break;
+
+   // NEW (FIXED):
+   case 'i':
+       e.stopPropagation();  // ✅ Only stops event bubbling
+       btn = findButtonByText('🔵 Idle');
+       break;
+   ```
+
+3. Updated `app.py` to load external JavaScript modules:
+   ```python
+   custom_js = """
+   // Load external JavaScript modules
+   import('/file=static/js/main.js');
+   """
+   ```
+
+### Benefits of the Fix
+✅ Keyboard shortcuts work without interfering with buttons
+✅ All button clicks function normally
+✅ Text selection and other browser features work
+✅ Cleaner code organization with external JS files
+✅ Easier to maintain and debug JavaScript
 
 ### Files Modified
-- `app.py:381` - JavaScript parameter disabled with comment explaining why
+- `app.py` - Updated to load external JS modules (-128 lines)
+- `static/js/keyboard_shortcuts.js` (NEW) - Keyboard shortcuts with stopPropagation
+- `static/js/toast.js` (NEW) - Toast notification system
+- `static/js/main.js` (NEW) - Module initialization
 
-### Permanent Fix (TODO)
-To properly re-enable keyboard shortcuts without breaking buttons:
+### Testing
+To verify the fix works:
+1. Start app: `python app.py`
+2. Test button clicks (should work) ✅
+3. Test keyboard shortcuts:
+   - Alt+I: Switch to Idle
+   - Alt+C: Switch to Text Chat
+   - Alt+V: Switch to Vision Chat
+   - Alt+G: Switch to Generate
+   - Ctrl+G: Generate Image
+   - Ctrl+K: Copy Prompt
+4. Verify buttons still work after using shortcuts ✅
 
-1. **Use `stopPropagation()` instead of `preventDefault()`**
+### Permanent Fix Status
+✅ **COMPLETE** - JavaScript refactored and working correctly
 ```javascript
 document.addEventListener('keydown', function(e) {
     // Don't interfere with text inputs

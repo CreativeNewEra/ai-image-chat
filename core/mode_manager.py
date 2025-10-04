@@ -26,8 +26,7 @@ logger = logging.getLogger(__name__)
 
 class Mode(Enum):
     IDLE = "idle"
-    CHAT = "chat"
-    VISION = "vision"
+    CHAT = "chat"  # Now handles both text and vision chat via tabs
     GENERATE = "generate"
 
 
@@ -81,12 +80,19 @@ class ModeManager:
         self.current_mode = Mode.IDLE
         return self._get_status_message()
 
-    def switch_to_chat(self):
-        """Load Ollama on GPU"""
-        logger.info(f"Switching to CHAT mode (loading {OLLAMA_CHAT_MODEL})...")
+    def switch_to_chat(self, preload_model=None):
+        """
+        Load Ollama on GPU for chat mode (supports both text and vision models)
+
+        Args:
+            preload_model: Optional model name to preload (OLLAMA_CHAT_MODEL or OLLAMA_VISION_MODEL)
+                          If None, defaults to OLLAMA_CHAT_MODEL
+        """
+        model_to_load = preload_model or OLLAMA_CHAT_MODEL
+        logger.info(f"Switching to CHAT mode (loading {model_to_load})...")
 
         # First unload anything else
-        if self.current_mode != Mode.IDLE:
+        if self.current_mode != Mode.IDLE and self.current_mode != Mode.CHAT:
             self.switch_to_idle()
             time.sleep(2)
 
@@ -95,7 +101,7 @@ class ModeManager:
             response = requests.post(
                 f"{OLLAMA_API}/generate",
                 json={
-                    "model": OLLAMA_CHAT_MODEL,
+                    "model": model_to_load,
                     "prompt": "Hi",
                     "stream": False,
                     "keep_alive": "5m",  # Keep loaded for 5 minutes
@@ -111,8 +117,8 @@ class ModeManager:
                 error_msg = f"Ollama returned status {response.status_code}"
                 logger.error(error_msg)
                 raise OllamaConnectionError(
-                    f"Failed to load chat model '{OLLAMA_CHAT_MODEL}': {error_msg}. "
-                    f"Please ensure the model is pulled with 'ollama pull {OLLAMA_CHAT_MODEL}'"
+                    f"Failed to load chat model '{model_to_load}': {error_msg}. "
+                    f"Please ensure the model is pulled with 'ollama pull {model_to_load}'"
                 )
         except requests.RequestException as e:
             # Connection error - Ollama likely not running
@@ -129,53 +135,6 @@ class ModeManager:
             logger.exception(f"Unexpected error switching to chat mode: {e}")
             raise ModeTransitionError(f"Failed to switch to chat mode: {str(e)}")
 
-    def switch_to_vision(self):
-        """Load Ollama vision model on GPU"""
-        logger.info(f"Switching to VISION CHAT mode (loading {OLLAMA_VISION_MODEL})...")
-
-        # First unload anything else
-        if self.current_mode != Mode.IDLE:
-            self.switch_to_idle()
-            time.sleep(2)
-
-        # Warm up Ollama vision model (loads model to GPU)
-        try:
-            response = requests.post(
-                f"{OLLAMA_API}/generate",
-                json={
-                    "model": OLLAMA_VISION_MODEL,
-                    "prompt": "Hi",
-                    "stream": False,
-                    "keep_alive": "5m",  # Keep loaded for 5 minutes
-                },
-                timeout=30,
-            )
-            if response.status_code == 200:
-                self.current_mode = Mode.VISION
-                logger.info("✓ Vision chat mode ready")
-                return self._get_status_message()
-            else:
-                # Non-200 status - model might not exist or Ollama issue
-                error_msg = f"Ollama returned status {response.status_code}"
-                logger.error(error_msg)
-                raise OllamaConnectionError(
-                    f"Failed to load vision model '{OLLAMA_VISION_MODEL}': {error_msg}. "
-                    f"Please ensure the model is pulled with 'ollama pull {OLLAMA_VISION_MODEL}'"
-                )
-        except requests.RequestException as e:
-            # Connection error - Ollama likely not running
-            logger.error(f"Failed to connect to Ollama: {e}")
-            raise OllamaConnectionError(
-                f"Cannot connect to Ollama at {OLLAMA_API}. "
-                f"Please start Ollama with 'ollama serve'"
-            )
-        except OllamaConnectionError:
-            # Re-raise our custom exceptions
-            raise
-        except Exception as e:
-            # Unexpected error - wrap in ModeTransitionError
-            logger.exception(f"Unexpected error switching to vision mode: {e}")
-            raise ModeTransitionError(f"Failed to switch to vision mode: {str(e)}")
 
     def switch_to_generate(self):
         """
@@ -187,7 +146,7 @@ class ModeManager:
         logger.info("Switching to GENERATE mode...")
 
         # Unload Ollama first
-        if self.current_mode in [Mode.CHAT, Mode.VISION]:
+        if self.current_mode == Mode.CHAT:
             self.switch_to_idle()
             time.sleep(2)
 
@@ -220,10 +179,7 @@ class ModeManager:
             return f"{icon} **IDLE MODE** - Ready to start\n\n{vram_display}\n\nChoose a mode to begin."
 
         elif mode == Mode.CHAT:
-            return f"{icon} **TEXT CHAT MODE** - Active\n\n{vram_display}\nModel: {OLLAMA_CHAT_MODEL}\n\nChat to develop new prompts from scratch!"
-
-        elif mode == Mode.VISION:
-            return f"{icon} **VISION CHAT MODE** - Active\n\n{vram_display}\nModel: {OLLAMA_VISION_MODEL}\n\nChat to refine existing images!"
+            return f"{icon} **CHAT MODE** - Active\n\n{vram_display}\n\n💬 Text Chat: Develop prompts from scratch\n👁️ Vision Chat: Refine existing images\n\nSwitch tabs to change between text and vision!"
 
         elif mode == Mode.GENERATE:
             status = self.comfy.get_status()
