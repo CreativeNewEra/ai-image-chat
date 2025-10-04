@@ -1,64 +1,66 @@
-#!/usr/bin/env python3
-"""
-Test Workflow Manager
+"""Unit tests for the workflow manager module without interactive output."""
 
-Quick test to verify workflow manager functionality.
-"""
+from __future__ import annotations
 
-import sys
+import json
+from pathlib import Path
+
+import pytest
 
 from core import WorkflowManager
 
 
-def test_workflow_manager():
-    """Test workflow manager basic functionality"""
-    print("=" * 60)
-    print("Testing Workflow Manager")
-    print("=" * 60)
+@pytest.fixture
+def populated_workflows_dir(tmp_path: Path) -> Path:
+    categories = [
+        ("text2img", "Text2Image", "Portrait Workflow"),
+        ("img2img", "Image2Image", "Upscale Workflow"),
+    ]
 
-    # Initialize manager
-    print("\n1. Initializing WorkflowManager...")
-    wf_manager = WorkflowManager()
-    print(f"✓ Initialized with {wf_manager.get_workflow_count()} workflows")
+    for index, (folder, category, name) in enumerate(categories):
+        category_dir = tmp_path / folder
+        category_dir.mkdir(parents=True)
 
-    # Check workflows loaded
-    print("\n2. Listing workflows...")
-    workflows = wf_manager.get_workflows_list()
-    for wf in workflows:
-        print(f"  - {wf['name']} ({wf['category']})")
-        print(f"    {wf['description']}")
+        workflow_file = category_dir / f"workflow_{index}.json"
+        workflow_file.write_text(json.dumps({"nodes": [{"id": index}]}), encoding="utf-8")
 
-    # Get categories
-    print("\n3. Categories...")
-    categories = wf_manager.get_all_categories()
-    print(f"  Categories: {', '.join(categories)}")
+        metadata = {
+            "name": name,
+            "description": f"Sample {category} workflow",
+            "category": category,
+            "tags": ["sample"],
+        }
+        meta_file = category_dir / f"workflow_{index}_meta.json"
+        meta_file.write_text(json.dumps(metadata), encoding="utf-8")
 
-    # Get stats
-    print("\n4. Statistics...")
-    stats = wf_manager.get_stats()
-    print(f"  Total workflows: {stats['total']}")
-    print(f"  By category: {stats['categories']}")
+    return tmp_path
 
-    # Set current workflow
-    print("\n5. Setting current workflow...")
-    if workflows:
-        filename = workflows[0]['filename']
-        success = wf_manager.set_current_workflow(filename)
-        if success:
-            current = wf_manager.get_current_workflow()
-            print(f"✓ Current workflow: {current.metadata.name}")
-            print(f"  Nodes in workflow: {len(current.workflow_data.get('nodes', []))}")
 
-    print("\n" + "=" * 60)
-    print("✅ Workflow Manager test passed!")
-    print("=" * 60)
-    return 0
+def test_workflow_manager_lists_categories_and_search(populated_workflows_dir: Path) -> None:
+    manager = WorkflowManager(str(populated_workflows_dir))
 
-if __name__ == "__main__":
-    try:
-        sys.exit(test_workflow_manager())
-    except Exception as e:
-        print(f"\n❌ Test failed: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    assert manager.get_workflow_count() == 2
+
+    categories = manager.get_all_categories()
+    assert categories == ["Image2Image", "Text2Image"]
+
+    results = manager.search_workflows("portrait")
+    assert len(results) == 1
+    assert results[0].metadata.name == "Portrait Workflow"
+
+
+def test_workflow_manager_delete_removes_files(populated_workflows_dir: Path) -> None:
+    manager = WorkflowManager(str(populated_workflows_dir))
+
+    filename = "workflow_0.json"
+    workflow_path = populated_workflows_dir / "text2img" / filename
+    metadata_path = populated_workflows_dir / "text2img" / "workflow_0_meta.json"
+
+    assert workflow_path.exists()
+    assert metadata_path.exists()
+
+    assert manager.delete_workflow(filename) is True
+    assert manager.get_workflow(filename) is None
+    assert not workflow_path.exists()
+    assert not metadata_path.exists()
+    assert manager.get_workflow_count() == 1
