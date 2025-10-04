@@ -397,7 +397,7 @@ class WorkflowManager:
             if json_file.exists():
                 json_file.unlink()
 
-            meta_file = json_file.with_name(f"{json_file.stem}_meta.json")
+            meta_file = workflow.filepath.with_name(f"{workflow.filepath.stem}_meta.json")
             if meta_file.exists():
                 meta_file.unlink()
 
