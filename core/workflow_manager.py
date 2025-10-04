@@ -51,7 +51,7 @@ class WorkflowMetadata:
         if not category:
             return ""
 
-        cleaned = "".join(ch for ch in category.lower() if ch.isalnum())
+        cleaned = "".join(ch for ch in category.lower() if ch.isalnum() or ch in "_-")
         return WorkflowMetadata._CATEGORY_ALIASES.get(cleaned, cleaned)
 
     def category_slug(self) -> str:
