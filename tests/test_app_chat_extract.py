@@ -14,10 +14,10 @@ def test_extract_from_chat_with_message_dict_history():
 
     previous_mode = mode_manager.get_mode()
     try:
-        mode_manager.current_mode = Mode.GENERATE
+        mode_manager.switch_to_generate()
         prompt, toast = extract_from_chat(history)
     finally:
-        mode_manager.current_mode = previous_mode
+        mode_manager.set_mode(previous_mode)
 
     assert prompt == history[-1]["content"]
     assert toast == hide_toast()
