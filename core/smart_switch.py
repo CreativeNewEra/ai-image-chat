@@ -55,9 +55,10 @@ class SmartSwitchManager:
             normalized = active_chat_tab.strip().lower()
             if not normalized:
                 return False
-            if "vision" in normalized:
+            # Use exact label matching to avoid misclassifying strings like 'provision'
+            if normalized == "vision" or normalized.startswith("vision ") or normalized.endswith(" vision"):
                 return True
-            if normalized in {"1", "tab_1", "vision_tab"}:
+            if normalized in {"1", "tab_1", "vision_tab", "vision chat"}:
                 return True
 
         return False
