@@ -16,7 +16,7 @@ class SmartSwitchManager:
         self.auto_switch_enabled = True  # User preference
         self.last_action = None
 
-    def should_suggest_switch(self, action, current_mode):
+    def should_suggest_switch(self, action, current_mode, active_chat_tab=None):
         """Determine if we should suggest a mode switch"""
         if not self.auto_switch_enabled:
             return None
@@ -32,11 +32,35 @@ class SmartSwitchManager:
         if action == "image_generated" and current_mode == Mode.GENERATE:
             return "vision"
 
-        # After vision refinement → suggest Generate
-        if action == "vision_refinement" and current_mode == Mode.VISION:
-            return "generate"
+        # After vision refinement → suggest Generate (Vision tab lives under Chat mode)
+        if action == "vision_refinement" and current_mode == Mode.CHAT:
+            if self._is_vision_tab(active_chat_tab):
+                return "generate"
 
         return None
+
+    @staticmethod
+    def _is_vision_tab(active_chat_tab):
+        """Determine if the active chat tab represents the Vision chat interface."""
+        if active_chat_tab is None:
+            # When the caller doesn't provide tab info, fall back to previous behaviour
+            return True
+
+        # Gradio tab components may return either an index or label depending on context
+        if isinstance(active_chat_tab, int):
+            return active_chat_tab == 1
+        if isinstance(active_chat_tab, float):
+            return active_chat_tab.is_integer() and int(active_chat_tab) == 1
+        if isinstance(active_chat_tab, str):
+            normalized = active_chat_tab.strip().lower()
+            if not normalized:
+                return False
+            if "vision" in normalized:
+                return True
+            if normalized in {"1", "tab_1", "vision_tab"}:
+                return True
+
+        return False
 
     def get_suggestion_message(self, suggested_mode):
         """Get user-friendly suggestion message"""
