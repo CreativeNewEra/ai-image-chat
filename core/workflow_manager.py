@@ -210,7 +210,9 @@ class WorkflowManager:
         try:
             relative_path = filepath.relative_to(self.workflows_dir)
         except ValueError:
-            relative_path = filepath
+            raise WorkflowLoadError(
+                f"Workflow file '{filepath}' is outside the workflows directory '{self.workflows_dir}'."
+            )
 
         key = relative_path.as_posix()
         workflow = Workflow(key, filepath, workflow_data, metadata)
