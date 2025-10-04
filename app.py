@@ -62,6 +62,94 @@ workflow_manager = WorkflowManager()
 theme_manager = ThemeManager()
 prompt_composer = PromptComposer()
 
+# Toast notification helpers (available globally for reuse and testing)
+
+
+def show_toast(message, toast_type="info"):
+    """Show a toast notification (returns update for toast component)."""
+
+    toast_class = f"toast toast-{toast_type}"
+    return gr.update(value=f"**{message}**", visible=True, elem_classes=[toast_class])
+
+
+def hide_toast():
+    """Hide toast notification."""
+
+    return gr.update(value="", visible=False)
+
+
+def _extract_text_content(content):
+    """Normalize message content to a string for prompt extraction."""
+
+    if isinstance(content, str):
+        return content
+
+    if isinstance(content, dict):
+        # Gradio can represent complex content as dictionaries (e.g., {"text": "..."}).
+        text = content.get("text")
+        return text if isinstance(text, str) else ""
+
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return " ".join(parts)
+
+    return str(content) if content is not None else ""
+
+
+def extract_from_chat(history):
+    """
+    Extract the most recent assistant prompt from chat history.
+
+    Args:
+        history (list): The chat history. Supported formats:
+            - List of dicts: Each dict should have at least a "role" key (e.g., "assistant") and a "content" key.
+            - List of tuples/lists: Each entry is a (user, assistant) tuple or list, where the assistant's response is at index 1.
+
+    Returns:
+        tuple: (content_text, toast)
+            - content_text (str): The extracted assistant prompt, or an error message if not found.
+            - toast (gradio.Update): A Gradio update object for showing or hiding a toast notification.
+
+    Notes:
+        - If the most recent assistant prompt is found and is longer than 30 characters, the function may trigger a mode switch to GENERATE and show a success toast.
+        - If no suitable prompt is found, an error message and a hidden toast are returned.
+    """
+    if not history:
+        return "No chat history to extract from!", hide_toast()
+
+    for entry in reversed(history):
+        content_text = ""
+
+        if isinstance(entry, dict):
+            if entry.get("role") != "assistant":
+                continue
+            content_text = _extract_text_content(entry.get("content"))
+        elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+            # Legacy Gradio history stored as (user, assistant)
+            assistant_response = entry[1]
+            if assistant_response is None:
+                continue
+            content_text = assistant_response if isinstance(assistant_response, str) else str(assistant_response)
+        else:
+            continue
+
+        if content_text and len(content_text) > 30:
+            if mode_manager.get_mode() != Mode.GENERATE:
+                mode_manager.switch_to_generate()
+                toast = show_toast("✅ Prompt copied and ready to generate!", "success")
+                return content_text, toast
+
+            return content_text, hide_toast()
+
+    return "No suitable prompt found in chat history", hide_toast()
+
 # Set default workflow (prefer text2img)
 if not workflow_manager.get_current_workflow() and workflow_manager.get_workflow_count() > 0:
     # Try to find a text2img workflow first
@@ -1595,16 +1683,6 @@ def create_app():
             None,
             [mode_status, smart_suggestion],
         )
-
-        # Toast notification helper
-        def show_toast(message, toast_type="info"):
-            """Show a toast notification (returns update for toast component)"""
-            toast_class = f"toast toast-{toast_type}"
-            return gr.update(value=f"**{message}**", visible=True, elem_classes=[toast_class])
-
-        def hide_toast():
-            """Hide toast notification"""
-            return gr.update(value="", visible=False)
 
         def get_enhanced_progress_html(message="Generating image...", estimated_time=None):
             """Create enhanced progress bar HTML with animation and estimated time"""
