@@ -47,12 +47,10 @@ class SmartSwitchManager:
             return True
 
         # Gradio tab components may return either an index or label depending on context
-        if isinstance(active_chat_tab, (int, float)):
-            try:
-                return int(active_chat_tab) == 1
-            except (TypeError, ValueError):
-                return False
-
+        if isinstance(active_chat_tab, int):
+            return active_chat_tab == 1
+        if isinstance(active_chat_tab, float):
+            return active_chat_tab.is_integer() and int(active_chat_tab) == 1
         if isinstance(active_chat_tab, str):
             normalized = active_chat_tab.strip().lower()
             if not normalized:
