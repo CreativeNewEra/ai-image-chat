@@ -18,6 +18,14 @@ logger = logging.getLogger(__name__)
 class WorkflowMetadata:
     """Metadata for a workflow"""
 
+    _CATEGORY_ALIASES = {
+        "text2image": "text2img",
+        "txt2image": "text2img",
+        "txt2img": "text2img",
+        "image2image": "img2img",
+        "image2img": "img2img",
+    }
+
     def __init__(
         self,
         name: str,
@@ -35,6 +43,26 @@ class WorkflowMetadata:
         self.author = author
         self.created_at = created_at or datetime.now().isoformat()
         self.modified_at = modified_at or datetime.now().isoformat()
+
+    @staticmethod
+    def normalize_category_slug(category: str | None) -> str:
+        """Normalize a category name into a comparable slug."""
+
+        if not category:
+            return ""
+
+        cleaned = "".join(ch for ch in category.lower() if ch.isalnum() or ch in "_-")
+        return WorkflowMetadata._CATEGORY_ALIASES.get(cleaned, cleaned)
+
+    def category_slug(self) -> str:
+        """Return the normalized slug for this workflow's category."""
+
+        return self.normalize_category_slug(self.category)
+
+    def matches_category(self, category: str) -> bool:
+        """Check if this metadata matches the provided category label or slug."""
+
+        return self.category_slug() == self.normalize_category_slug(category)
 
     def to_dict(self) -> dict:
         """Convert to dictionary"""
@@ -243,7 +271,12 @@ class WorkflowManager:
 
     def get_workflows_by_category(self, category: str) -> list[Workflow]:
         """Get all workflows in a category"""
-        return [wf for wf in self.workflows.values() if wf.metadata.category == category]
+
+        return [
+            wf
+            for wf in self.workflows.values()
+            if wf.metadata.matches_category(category)
+        ]
 
     def get_all_categories(self) -> list[str]:
         """Get list of all categories"""

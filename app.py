@@ -155,7 +155,7 @@ if not workflow_manager.get_current_workflow() and workflow_manager.get_workflow
     # Try to find a text2img workflow first
     text2img_workflow = None
     for workflow_id, workflow in workflow_manager.workflows.items():
-        if workflow.metadata.category == "text2img":
+        if workflow.metadata.matches_category("text2img"):
             text2img_workflow = workflow_id
             break
 
@@ -388,16 +388,22 @@ def generate_image(
     current_workflow = workflow_manager.get_current_workflow()
 
     # If current workflow doesn't match required category, find the right one
-    if not current_workflow or current_workflow.metadata.category != required_category:
+    if (
+        not current_workflow
+        or not current_workflow.metadata.matches_category(required_category)
+    ):
         logger.info(f"Searching for {required_category} workflow...")
         for workflow_id, workflow in workflow_manager.workflows.items():
-            if workflow.metadata.category == required_category:
+            if workflow.metadata.matches_category(required_category):
                 workflow_manager.set_current_workflow(workflow_id)
                 current_workflow = workflow
                 logger.info(f"Auto-selected {required_category} workflow: {workflow.metadata.name}")
                 break
 
-        if not current_workflow or current_workflow.metadata.category != required_category:
+        if (
+            not current_workflow
+            or not current_workflow.metadata.matches_category(required_category)
+        ):
             return None, f"❌ No {required_category} workflow available. Please add one to workflows/{required_category}/", None, None
 
     # Load workflow data into ComfyUI bridge (reload every time)

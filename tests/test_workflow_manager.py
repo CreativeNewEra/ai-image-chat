@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from core import WorkflowManager
+import app
+from core import Mode, WorkflowManager
 
 
 @pytest.fixture
@@ -64,3 +65,46 @@ def test_workflow_manager_delete_removes_files(populated_workflows_dir: Path) ->
     assert not workflow_path.exists()
     assert not metadata_path.exists()
     assert manager.get_workflow_count() == 1
+
+
+def test_generate_image_accepts_text2image_category(
+    populated_workflows_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Workflows with title case categories should match slug comparisons."""
+
+    manager = WorkflowManager(str(populated_workflows_dir))
+    manager.current_workflow_name = None
+
+    monkeypatch.setattr(app, "workflow_manager", manager)
+    monkeypatch.setattr(app.mode_manager, "get_mode", lambda: Mode.GENERATE)
+    monkeypatch.setattr(app.comfy, "load_workflow_from_data", lambda data: True)
+    monkeypatch.setattr(app.gallery, "add_image", lambda *_, **__: None)
+    monkeypatch.setattr(app.session_stats, "add_generation", lambda *_: None)
+    monkeypatch.setattr(app.session_stats, "get_stats_display", lambda: "stats")
+    monkeypatch.setattr(app.seed_manager, "add_seed", lambda *_: None)
+    monkeypatch.setattr(app.prompt_history, "add_prompt", lambda *_, **__: None)
+
+    def fake_get_seed(seed):
+        return 42
+
+    monkeypatch.setattr(app.seed_manager, "get_seed_for_generation", fake_get_seed)
+
+    def fake_generate_image(**kwargs):
+        return "image-bytes", "success", kwargs["seed"]
+
+    monkeypatch.setattr(app.comfy, "generate_image", fake_generate_image)
+
+    image, status, actual_seed, _ = app.generate_image(
+        prompt_text="Prompt long enough",
+        steps=10,
+        width=768,
+        height=768,
+        seed_value="",
+    )
+
+    assert image == "image-bytes"
+    assert "No text2img workflow available" not in status
+    assert actual_seed == 42
+    current = manager.get_current_workflow()
+    assert current is not None
+    assert current.metadata.matches_category("text2img")
