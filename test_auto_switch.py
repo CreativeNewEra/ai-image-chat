@@ -4,11 +4,12 @@ Test script for automatic mode switching functionality
 """
 
 import sys
+import pytest
 from core import Mode, ModeManager, VRAMMonitor
 from comfyui_api import comfy
 
 def test_auto_mode_switching():
-    """Test the automatic mode switching logic"""
+    """Test the automatic mode switching logic (requires ComfyUI to be running)"""
 
     print("=" * 60)
     print("Testing Automatic Mode Switching")
@@ -17,6 +18,10 @@ def test_auto_mode_switching():
     # Initialize components
     vram_monitor = VRAMMonitor()
     mode_manager = ModeManager(vram_monitor, comfy)
+
+    # Check if ComfyUI is available before running test
+    if not comfy.is_available():
+        pytest.skip("ComfyUI is not running. Start ComfyUI with ./scripts/start_comfy.sh to run this test.")
 
     # Test 1: Start in IDLE mode
     print("\n1. Starting state:")
